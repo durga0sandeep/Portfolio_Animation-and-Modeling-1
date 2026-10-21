@@ -105,4 +105,8 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\bone.frag" />
+    <None Include="shaders\bone.vert" />
+  </ItemGroup>
 </Project>

@@ -8,8 +8,6 @@ float pi2 = 2*pi;
 
 out vec4 FragColor;
 
-in vec2 texCoord;
-
 uniform int width, height;
 uniform vec3 lightPos, eyePos, lightCol;
 
@@ -18,11 +16,27 @@ uniform sampler2D gBufferNormal;
 uniform sampler2D gBufferDiffuse;
 uniform sampler2D gBufferSpecular;
 
-void main()
+
+in vec2 texCoord;
+
+vec4 texcolor;// = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+//uniform sampler2D texture1;
+
+vec3 baseDiffuse;
+
+void main( )
 {
+
     vec2 uv = gl_FragCoord.xy / vec2(width, height);
+    //texcolor = texture(texture1, uv);
+    
     vec3 normalVec = texture2D(gBufferNormal, uv).xyz;
-    vec3 Kd = texture2D(gBufferDiffuse, uv).xyz; 
+    vec3 Kd = texture2D(gBufferDiffuse, uv).xyz; //color.xyz;
+    
+    baseDiffuse = texture2D(gBufferDiffuse, uv).xyz; 
+    Kd = baseDiffuse; // * texcolor.xyz;
+    //Kd = color.xyz;//testing
     vec3 Ks = vec3(0.04);
     vec3 specular = texture2D(gBufferSpecular, uv).xyz; 
     float shininess = texture2D(gBufferSpecular, uv).w;

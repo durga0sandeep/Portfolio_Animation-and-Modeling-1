@@ -1,4 +1,3 @@
-
 #include "math.h"
 #include <iostream>
 #include <stdlib.h>
@@ -18,9 +17,9 @@ using namespace gl;
 #include <glm/ext.hpp>          
 
 #include "framework.h"
-//#include "shapes.h"
 #include "texture.h"
 #include "transform.h"
+
 
 const float PI = 3.14159f;
 const float rad = PI/180.0f;    
@@ -28,6 +27,7 @@ const float rad = PI/180.0f;
 glm::mat4 Identity;
 
 #define CHECKERROR {GLenum err = glGetError(); if (err != GL_NO_ERROR) { fprintf(stderr, "OpenGL error (at line scene.cpp:%d): %s\n", __LINE__, gluErrorString(err)); exit(-1);} }
+
 
 void Scene::InitCamera()
 {
@@ -69,6 +69,16 @@ void Scene::InitializeScene()
     //FBO
     gBuffer.Init(width, height);
     CHECKERROR;
+    
+    
+    BoneProgram = new ShaderProgram();
+    BoneProgram->AddShader("shaders/bone.vert", GL_VERTEX_SHADER);
+    BoneProgram->AddShader("shaders/bone.frag", GL_FRAGMENT_SHADER);
+    glBindAttribLocation(BoneProgram->programId, 0, "aPos");
+    BoneProgram->LinkProgram();
+   
+ 
+    CharTexture = new Texture("fbx/textures/roman_blue_D_texture.jpg");
 
     lightingProgram = new ShaderProgram();
     lightingProgram->AddShader("shaders/lightingPhong.vert", GL_VERTEX_SHADER);
@@ -79,7 +89,10 @@ void Scene::InitializeScene()
     glBindAttribLocation(lightingProgram->programId, 2, "vertexTexture");
     glBindAttribLocation(lightingProgram->programId, 3, "vertexTangent");
     lightingProgram->LinkProgram();
-
+    lightingProgram->UseShader();
+    CharTexture->BindTexture(0, lightingProgram->programId, "texture1");//
+    
+   
     gBufferProgram = new ShaderProgram();
     gBufferProgram->AddShader("shaders/gBuffer.vert", GL_VERTEX_SHADER);
     gBufferProgram->AddShader("shaders/gBuffer.frag", GL_FRAGMENT_SHADER);
@@ -91,25 +104,25 @@ void Scene::InitializeScene()
     glBindAttribLocation(gBufferProgram->programId, 4, "boneIds");
     glBindAttribLocation(gBufferProgram->programId, 5, "weight");
     gBufferProgram->LinkProgram();
-
-    basicShader = new ShaderProgram();
-    basicShader->AddShader("shaders/vertexShader.vert", GL_VERTEX_SHADER);
-    basicShader->AddShader("shaders/fragmentShader.frag", GL_FRAGMENT_SHADER);
-
-    glBindAttribLocation(basicShader->programId, 0, "vertex");
-    glBindAttribLocation(basicShader->programId, 1, "vertexNormal");
-    glBindAttribLocation(basicShader->programId, 2, "vertexTexture");
-    glBindAttribLocation(basicShader->programId, 3, "vertexTangent");
-    basicShader->LinkProgram();
-
+    
     quad = new Quad();
 
     model = new Mesh();
-    model->LoadMesh("fbx/fbx/roman_D.fbx");
-    model->anim_num = 0;
+    model->LoadMesh(meshPat);
+    
+    model->DefineAnimationClip("idle", 0, 0, 338, true);
+    model->DefineAnimationClip("run", 0, 339, 361, true);
+    model->DefineAnimationClip("fall down", 0, 362, 442, true);
+    model->DefineAnimationClip("attack", 0, 442, 510, true);
+    model->DefineAnimationClip("tpose", 0, 510, 540, true);
+
+
+    model->SetAnimation("idle");
+    model->SetAnimationYOffset("idle", 0.0f);
     
     start = glfwGetTime();
 }
+
 
 void Scene::DrawMenu()
 {
@@ -119,54 +132,40 @@ void Scene::DrawMenu()
 
     ImGui::Begin("Sample UI Box");
     ImGui::Text("sample text");
-    
-    const char* models[] = { "Roman", "Viking" };
-    const char* current_model = models[0];
-    if (ImGui::BeginCombo("Model", models[0])) 
-    {
-        for (int n = 0; n < IM_ARRAYSIZE(models); n++)
-        {
-            bool is_selected = (current_model == models[n]); 
-            if (ImGui::Selectable(models[n], is_selected))
-                current_model = models[n];
-            if (is_selected)
-                ImGui::SetItemDefaultFocus();   
-        }
-
-        ImGui::EndCombo();
-    }
-
-    if (ImGui::Button((play ? "Stop" : "Play")))
-    {
-        play = !play;
-    }
-
+   
     ImGui::Checkbox("Draw Bone", &bone);
     ImGui::SameLine();
     ImGui::Checkbox("Draw Mesh", &mesh);
+    
+    const char* animLabels[] = { "Idle", "Run", "Fall Down", "Attack", "TPose" };
+    const char* animClipNames[] = { "idle", "run", "fall down", "attack", "tpose" };
 
-    const char* items[] = { "Cycle", "Idle", "Run", "Fall Down", "Attack" };
-    const char* current_item = items[0];
-
-    if (ImGui::BeginCombo("Animation", items[0]))
+    static int currentAnimIdx = 0; // persists across frames
+    if (ImGui::BeginCombo("Animation", animLabels[currentAnimIdx]))
     {
-        for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+        for (int n = 0; n < IM_ARRAYSIZE(animLabels); n++)
         {
-            bool is_selected = (current_item == items[n]); 
-            if (ImGui::Selectable(items[n], is_selected))
-                current_item = items[n];
+            bool is_selected = (currentAnimIdx == n);
+            if (ImGui::Selectable(animLabels[n], is_selected))
+            {
+                currentAnimIdx = n;
+                if (model) model->SetAnimation(animClipNames[currentAnimIdx]);
+            }
             if (is_selected)
-                ImGui::SetItemDefaultFocus();   
+                ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
     }
+
+    ImGui::Separator();
     ImGui::End();
-
-
+    
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    
 }
+
+
+
 
 void Scene::BuildTransforms()
 {
@@ -191,11 +190,13 @@ void Scene::BuildTransforms()
         tr[2] = pow(tr[2], 1.01f);
 
 
-    CHECKERROR;
+ //   CHECKERROR;
     WorldView = Translate(tr[0], tr[1], -tr[2]) * Rotate(0, tilt - 90) * Rotate(2, spin);
     WorldProj = Perspective((ry*width)/height, ry, front, (mode==0) ? 1000 : back);
 
 }
+
+
 
 void Scene::DrawScene()
 {
@@ -206,12 +207,29 @@ void Scene::DrawScene()
 
     WorldInverse = glm::inverse(WorldView);
     
-
     int loc, programId;
 
+    //Draw the bones
+    /*
+    BoneProgram->UseShader();
+    programId = BoneProgram->programId;
+    loc = glGetUniformLocation(programId, "viewProj");
+    ResultMat = WorldProj * WorldView;
+    glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(ResultMat));
+    */
+
+    //
+    //charTexture->BindTexture(1, basicShader->programId, "texture1");
+    CharTexture->ActivateTexture(0);//Activating Texture
+
+
+    ////////////G-BUFFER////////////////////
+    //
     //Draw the mesh to the g buffer
     gBufferProgram->UseShader();
     programId = gBufferProgram->programId;
+
+    //charTexture->BindTexture(0, basicShader->programId, "texture1");
 
     gBuffer.BindFBO();
     GLenum DrawBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
@@ -228,8 +246,12 @@ void Scene::DrawScene()
 
     long double curr = glfwGetTime();
     long double dt = ((float)(curr - start));
-    model->Draw(programId, dt);
+    start = curr;
 
+
+    //std::cout << " +++ " << programId << std::endl;
+    model->Draw(programId, dt);
+    
 
     gBuffer.UnbindFBO();
     gBufferProgram->UnuseShader();
@@ -243,6 +265,12 @@ void Scene::DrawScene()
     lightingProgram->UseShader();
     programId = lightingProgram->programId;
     
+    //charTexture->BindTexture(0, programId, "texCoord");
+    
+    /*
+    loc = glGetUniformLocation(programId, "texCoord");
+    glUniform1i(loc, CharTexture);
+    */
     
     loc = glGetUniformLocation(programId, "WorldProj");
     glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(WorldProj));
@@ -265,10 +293,10 @@ void Scene::DrawScene()
     
     CHECKERROR;
 
-    gBuffer.BindTexture(0, lightingProgram->programId, "gBufferWorldPos", 0);
-    gBuffer.BindTexture(1, lightingProgram->programId, "gBufferNormal", 1);
-    gBuffer.BindTexture(2, lightingProgram->programId, "gBufferDiffuse", 2);
-    gBuffer.BindTexture(3, lightingProgram->programId, "gBufferSpecular", 3);
+    gBuffer.BindTexture(1, lightingProgram->programId, "gBufferWorldPos", 0);
+    gBuffer.BindTexture(2, lightingProgram->programId, "gBufferNormal", 1);
+    gBuffer.BindTexture(3, lightingProgram->programId, "gBufferDiffuse", 2);
+    gBuffer.BindTexture(4, lightingProgram->programId, "gBufferSpecular", 3);
     CHECKERROR;
 
     quad->DrawVAO();
@@ -285,5 +313,45 @@ void Scene::DrawScene()
         GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+
+    if (bone == true)
+    {
+        BoneProgram->UseShader();
+        glm::mat4 viewProj = WorldProj * WorldView;
+        model->DebugSkeleton(viewProj, BoneProgram->programId);
+        BoneProgram->UnuseShader();
+    }
+
+    /*
+    // Draw Bezier Curve
+    if (showCurve && bezierCurve)
+    {
+        CurveProgram->UseShader();
+        programId = CurveProgram->programId;
+
+        glm::mat4 viewProj = WorldProj * WorldView;
+        loc = glGetUniformLocation(programId, "viewProj");
+        glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(viewProj));
+
+        glLineWidth(3.0f);
+        bezierCurve->draw();
+        glLineWidth(1.0f);
+
+        CurveProgram->UnuseShader();
+    }
+    */
+
+    // Handle wireframe mode
+    if (mesh == false) {
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    }
+    else {
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    }
+
+
 }
+
+
+
 

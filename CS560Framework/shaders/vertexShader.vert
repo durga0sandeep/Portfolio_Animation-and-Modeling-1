@@ -9,7 +9,7 @@ in vec2 vertexTexture;
 in vec3 vertexTangent;
 
 out vec2 texCoord;
-
+	
 void main()
 {
     gl_Position = WorldProj*WorldView*ModelTr*vertex;

@@ -26,6 +26,9 @@ class Scene
 public:
     GLFWwindow* window;
 
+    std::string meshPat = "fbx/fbx/roman_D.fbx";
+    const char* current_model = "Roman";
+
     // Light parameters
     float lightSpin, lightTilt, lightDist;
     glm::vec3 lightPos = {-30.0f, -60.f, 90.0f};
@@ -36,7 +39,8 @@ public:
     GBuffer gBuffer;
     unsigned int id, bindpoint;
 
-    long double start;
+    long double start, curr, dt;
+
 
     int key;
     float spin, tilt, speed, ry, front, back;
@@ -52,9 +56,12 @@ public:
     // Transformations
     glm::mat4 WorldProj, WorldView, WorldInverse;
     glm::mat4 lightProj, lightView;
+    glm::mat4 ResultMat;
 
     Mesh* model;
     Shape* quad; //deferred shading
+    Texture* CharTexture;
+
 
     //UI
     bool play = true;
@@ -66,12 +73,19 @@ public:
     ShaderProgram* gBufferProgram;
     ShaderProgram* basicShader;
 
+    ShaderProgram* BoneProgram;
+
+	//ShaderProgram* CurveProgram;
+
     void InitCamera();
-    void CreateQuad();
-    void DrawQuad();
     void InitializeScene();
     void BuildTransforms();
     void DrawMenu();
     void DrawScene();
 
 };
+
+
+
+
+

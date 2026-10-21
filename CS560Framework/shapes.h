@@ -48,4 +48,14 @@ public:
 };
 
 
+class Line : public Shape {
+public:
+    Line(const int n = 1);
+    void SetupLineVAO(GLuint& VAO, GLuint& VBO);
+    void DrawLine(const glm::vec3& start, const glm::vec3& end, 
+        GLuint shader, GLuint VAO, GLuint VBO);
+
+};
+
+
 #endif

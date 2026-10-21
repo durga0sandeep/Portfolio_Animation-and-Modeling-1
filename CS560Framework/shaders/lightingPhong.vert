@@ -17,9 +17,17 @@ layout(location = 5) in vec4 weight;
 
 out vec2 texCoord;
 
+	
 void main()
 {
     gl_Position = vertex;
     texCoord = vertexTexture;
     
 }
+
+
+
+
+
+
+

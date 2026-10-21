@@ -156,7 +156,7 @@ void Scroll(GLFWwindow* window, double x, double y)
         scene.tr[2] *= a;
         printf("ry: %f\n", scene.ry);
     }
-
+        
     else if (y > 0.0) {
         scene.tr[2] = pow(scene.tr[2], 1.0f / 1.02f);
     }
@@ -173,3 +173,5 @@ void InitInteraction()
     glfwSetCursorPosCallback(scene.window, MouseMotion);
     glfwSetScrollCallback(scene.window, Scroll);
 }
+
+
