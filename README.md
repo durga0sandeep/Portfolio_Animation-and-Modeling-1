@@ -20,6 +20,8 @@ Developed physically based simulation techniques using Newtonian mechanics and r
 
 <img width="779" height="593" alt="AM1" src="https://github.com/user-attachments/assets/37b70933-830d-466e-ab65-6fc41fb92ace" />
 
+
+Video Link:
 [![Watch the video](https://youtube.com)](https://youtu.be/xiCy2uyo7j0)
 
 
