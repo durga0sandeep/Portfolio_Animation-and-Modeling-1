@@ -22,17 +22,32 @@ out vec4 worldPos;
 
 uniform mat4 gBones[27];//bones final transformation matrix
 
+
+uniform bool hasAnimation;
+
+
 void main()
 {
     
+    vec4 finalVertex;
+
+    if(hasAnimation){
 
     mat4 bonesTransforms = 
         gBones[boneIds[0]] * weight[0] +
         gBones[boneIds[1]] * weight[1] +
         gBones[boneIds[2]] * weight[2] +
         gBones[boneIds[3]] * weight[3];
+        
+        finalVertex =  bonesTransforms * vertex;
+    }else{
+        
+        finalVertex =  vertex;
+    
+    }
 
-    gl_Position = WorldProj * WorldView * ModelTr * bonesTransforms * vertex;
+
+    gl_Position = WorldProj * WorldView * ModelTr * finalVertex;
     worldPos = ModelTr*vertex;
     normalVec = vertexNormal*mat3(NormalTr); 
     texCoord = vertexTexture; 

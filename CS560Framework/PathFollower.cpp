@@ -3,30 +3,34 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 /**
- * @brief Construct a PathFollower instance.
+ * @brief Construct a new PathFollower object.
  *
- * @param pg Pointer to the PathGenerator that provides the curve.
- * @param duration Total duration of the animation along the path.
+ * Initializes the follower with a given PathGenerator, total duration,
+ * default orientation mode, and initial state.
+ *
+ * @param pg Pointer to the PathGenerator object representing the path.
+ * @param duration Total time to traverse the path (seconds).
  */
 PathFollower::PathFollower(PathGenerator* pg, float duration)
     : pathGen(pg), totalDuration(duration), currentTime(0.0f),
-    isAnimating(false), loopAnimation(true),
-    orientationMode(LOOK_AHEAD_WITH_BANKING),
+    isAnimating(false),
+    loopAnimation(false), // 1. Set looping to false
+    orientationMode(TANGENT_FORWARD), // 2. Simple forward orientation
     centerOfInterest(0.0f, 0.0f, 0.0f),
-    lookAheadDistance(3.0f), bankingFactor(0.4f),
+    lookAheadDistance(1.0f), bankingFactor(0.0f), // 3. Remove banking
     prevPosition(0.0f), prevTangent(1.0f, 0.0f, 0.0f)
 {
     setDuration(duration, 0.2f, 0.2f);
 }
 
 /**
- * @brief Set the duration of the animation with ease-in and ease-out ratios.
+ * @brief Set the total duration of the animation and ease-in/ease-out ratios.
  *
- * Calculates maximum speed to maintain the correct distance along the path.
+ * Calculates the maximum speed for the follower based on a trapezoidal velocity profile.
  *
- * @param duration Total animation duration.
- * @param easeInRatio Fraction of total duration for ease-in (0..1).
- * @param easeOutRatio Fraction of total duration for ease-out (0..1).
+ * @param duration Total duration of the animation (seconds).
+ * @param easeInRatio Fraction of duration for ease-in phase [0,1].
+ * @param easeOutRatio Fraction of duration for ease-out phase [0,1].
  */
 void PathFollower::setDuration(float duration, float easeInRatio, float easeOutRatio) {
     totalDuration = duration;
@@ -48,10 +52,12 @@ void PathFollower::setDuration(float duration, float easeInRatio, float easeOutR
 }
 
 /**
- * @brief Compute normalized arc length [0,1] for a given time using ease-in/out.
+ * @brief Compute the normalized distance along the path for a given time.
  *
- * @param t Current time [0, totalDuration].
- * @return float Normalized arc length along the path.
+ * Implements ease-in (quadratic acceleration), constant speed, and ease-out (quadratic deceleration).
+ *
+ * @param t Current time along the path [0, totalDuration].
+ * @return float Normalized distance along the path [0, 1].
  */
 float PathFollower::easeInOutDistance(float t) {
     if (t <= 0.0f) return 0.0f;
@@ -87,35 +93,31 @@ float PathFollower::easeInOutDistance(float t) {
 }
 
 /**
- * @brief Compute position and tangent on the path for a normalized global arc length.
+ * @brief Get the position and tangent vector at a specified normalized arc length.
  *
- * @param globalArcLength Normalized arc length along the full path [0,1].
- * @param[out] pos Calculated position on the path.
- * @param[out] tangent Normalized tangent vector at the position.
+ * @param globalArcLength Normalized arc length along the entire path [0,1].
+ * @param[out] pos Output world-space position on the path.
+ * @param[out] tangent Output tangent vector (normalized) at the position.
  */
 void PathFollower::getPositionAndTangent(float globalArcLength,
     glm::vec3& pos,
     glm::vec3& tangent) {
     int numSegments = pathGen->getNumPoints() / 3;
 
-    // Clamp and wrap
-    globalArcLength = fmod(globalArcLength, 1.0f);
-    if (globalArcLength < 0.0f) globalArcLength += 1.0f;
+    // Change: Clamp instead of Wrap
+    // globalArcLength = fmod(globalArcLength, 1.0f); <-- Remove this
+    globalArcLength = glm::clamp(globalArcLength, 0.0f, 0.999f); // Keep within [0, 1]
 
-    // Find which segment we're in
     int segment = (int)(globalArcLength * numSegments);
     segment = glm::clamp(segment, 0, numSegments - 1);
 
-    // Local arc length within segment [0, 1]
     float localArcLength = (globalArcLength * numSegments) - segment;
-
-    // Get parameter t for this segment
     float t = pathGen->parameterFromArcLength(segment, localArcLength);
 
-    // Get control points
-    int i0 = (segment * 3) % pathGen->getNumPoints();
-    int i1 = (segment * 3 + 1) % pathGen->getNumPoints();
-    int i2 = (segment * 3 + 2) % pathGen->getNumPoints();
+    // ... rest of the function remains the same to calculate pos and tangent ...
+    int i0 = (segment * 3);
+    int i1 = (segment * 3 + 1);
+    int i2 = (segment * 3 + 2);
     int i3 = (segment * 3 + 3) % pathGen->getNumPoints();
 
     glm::vec3 p0 = pathGen->getControlPoint(i0);
@@ -123,29 +125,23 @@ void PathFollower::getPositionAndTangent(float globalArcLength,
     glm::vec3 p2 = pathGen->getControlPoint(i2);
     glm::vec3 p3 = pathGen->getControlPoint(i3);
 
-    // Evaluate position
     pos = pathGen->evaluateCubicBezier(p0, p1, p2, p3, t);
 
-    // Calculate tangent (derivative of cubic Bezier)
+    // Simple derivative for tangent
     float u = 1.0f - t;
-    tangent = 3.0f * u * u * (p1 - p0) +
-        6.0f * u * t * (p2 - p1) +
-        3.0f * t * t * (p3 - p2);
+    tangent = 3.0f * u * u * (p1 - p0) + 6.0f * u * t * (p2 - p1) + 3.0f * t * t * (p3 - p2);
+    
+    if (glm::length(tangent) > 0.001f) tangent = glm::normalize(tangent);
 
-    if (glm::length(tangent) > 0.001f) {
-        tangent = glm::normalize(tangent);
-    }
 }
 
 /**
- * @brief Calculate the orientation matrix based on the current mode.
+ * @brief Calculate the orientation matrix at a given position based on mode.
  *
- * Modes include tangent following, look-ahead, banking, or facing points.
- *
- * @param position Current position on the path.
- * @param tangent Current tangent vector.
- * @param prevTangent Previous tangent vector for banking calculations.
- * @return glm::mat4 4x4 orientation matrix.
+ * @param position World-space position of the follower.
+ * @param tangent Tangent vector along the path.
+ * @param prevTangent Tangent vector from the previous frame (used for banking).
+ * @return glm::mat4 Orientation matrix (right, up, forward, position).
  */
 glm::mat4 PathFollower::calculateOrientation(const glm::vec3& position,
     const glm::vec3& tangent,
@@ -293,69 +289,95 @@ glm::mat4 PathFollower::calculateOrientation(const glm::vec3& position,
 }
 
 /**
- * @brief Update the path follower state over time.
+ * @brief Update the follower's state over time.
  *
- * @param deltaTime Time step in seconds.
- * @return PathState Current state including position, orientation, speed, and arc length.
+ * Advances the current time by deltaTime and calculates the PathState,
+ * including position, orientation, speed, and normalized arc length.
+ *
+ * @param deltaTime Time step (seconds) to advance.
+ * @return PathState Struct containing current position, orientation axes, speed, and normalized arc length.
  */
-PathFollower::PathState PathFollower::update(float deltaTime) {
+PathFollower::PathState PathFollower::update(float deltaTime)
+{
     PathState state;
-
-    if (isAnimating) {
+    if (isAnimating)
+    {
         currentTime += deltaTime;
 
-        if (currentTime >= totalDuration) {
-            if (loopAnimation) {
-                currentTime = fmod(currentTime, totalDuration);
-            }
-            else {
-                currentTime = totalDuration;
-                isAnimating = false;
-            }
+        if (currentTime >= totalDuration)
+        {
+            currentTime = totalDuration;
+            isAnimating = false;   // Movement is officially finished
         }
     }
 
-    // Get normalized arc length based on ease-in/ease-out
+    if (!isAnimating && currentTime >= totalDuration)
+    {
+        float arcLength = easeInOutDistance(totalDuration);
+
+        glm::vec3 position, tangent;
+        getPositionAndTangent(arcLength, position, tangent);
+
+        glm::mat4 orientMatrix =
+            calculateOrientation(position, tangent, prevTangent);
+
+        state.position = position;
+        state.forward = glm::vec3(orientMatrix[2]);
+        state.up = glm::vec3(orientMatrix[1]);
+        state.right = glm::vec3(orientMatrix[0]);
+
+        state.speed = 0.0f;
+        state.normalizedArcLength = arcLength;
+
+        // Preserve last valid frame data
+        prevPosition = position;
+        prevTangent = tangent;
+        return state;
+    }
+
     float arcLength = easeInOutDistance(currentTime);
 
-    // Get position and tangent
     glm::vec3 position, tangent;
     getPositionAndTangent(arcLength, position, tangent);
 
-    // Calculate orientation
-    glm::mat4 orientMatrix = calculateOrientation(position, tangent, prevTangent);
+    glm::mat4 orientMatrix =
+        calculateOrientation(position, tangent, prevTangent);
 
-    // Fill state
     state.position = position;
     state.forward = glm::vec3(orientMatrix[2]);
     state.up = glm::vec3(orientMatrix[1]);
     state.right = glm::vec3(orientMatrix[0]);
 
-    // Calculate current speed
-    if (currentTime < easeInDuration) {
+    if (currentTime < easeInDuration)
+    {
         state.speed = maxSpeed * (currentTime / easeInDuration);
     }
-    else if (currentTime < totalDuration - easeOutDuration) {
+    else if (currentTime < totalDuration - easeOutDuration)
+    {
         state.speed = maxSpeed;
     }
-    else {
-        float easeOutTime = currentTime - (totalDuration - easeOutDuration);
-        state.speed = maxSpeed * (1.0f - easeOutTime / easeOutDuration);
+    else
+    {
+        float easeOutTime =
+            currentTime - (totalDuration - easeOutDuration);
+
+        state.speed = maxSpeed *
+            (1.0f - easeOutTime / easeOutDuration);
     }
 
     state.normalizedArcLength = arcLength;
 
-    // Store for next frame
     prevPosition = position;
     prevTangent = tangent;
 
     return state;
 }
 
+
 /**
- * @brief Set orientation mode for the follower.
+ * @brief Set the orientation mode of the follower.
  *
- * @param mode New orientation mode.
+ * @param mode One of the OrientationMode enum values (e.g., TANGENT_FORWARD, LOOK_AHEAD_WITH_BANKING, etc.).
  */
 void PathFollower::setOrientationMode(OrientationMode mode) {
     orientationMode = mode;
@@ -363,50 +385,52 @@ void PathFollower::setOrientationMode(OrientationMode mode) {
 
 
 /**
- * @brief Set the center of interest for FACE_CENTER or FACE_POINT_OF_INTEREST modes.
+ * @brief Set the center of interest point for orientation modes that face a point.
  *
- * @param center Center position to look at.
+ * @param center 3D point to face (world-space coordinates).
  */
 void PathFollower::setCenterOfInterest(const glm::vec3& center) {
     centerOfInterest = center;
 }
 
+
 /**
- * @brief Set the look-ahead distance (used in look-ahead modes).
+ * @brief Set the look-ahead distance used for look-ahead orientation modes.
  *
- * @param distance Look-ahead distance.
+ * @param distance Look-ahead distance in percentage of path length.
  */
 void PathFollower::setLookAheadDistance(float distance) {
     lookAheadDistance = distance;
 }
 
 /**
- * @brief Set the banking factor (how strongly the object banks on curves).
+ * @brief Set the banking factor for banking orientation modes.
  *
- * @param factor Banking factor scalar.
+ * @param factor Banking intensity multiplier.
  */
 void PathFollower::setBankingFactor(float factor) {
     bankingFactor = factor;
 }
 
 /**
- * @brief Enable or disable looping of the animation.
+ * @brief Enable or disable looping of the path animation.
  *
- * @param loop True to loop, false to stop at end.
+ * @param loop True to enable looping, false to disable.
  */
 void PathFollower::setLooping(bool loop) {
-    loopAnimation = loop;
+    //loopAnimation = loop;
+    loopAnimation = false;
 }
 
 /**
- * @brief Start/resume animation.
+ * @brief Start the path-following animation.
  */
 void PathFollower::start() {
     isAnimating = true;
 }
 
 /**
- * @brief Pause the animation.
+ * @brief Pause the path-following animation.
  */
 void PathFollower::pause() {
     isAnimating = false;
@@ -414,7 +438,7 @@ void PathFollower::pause() {
 
 
 /**
- * @brief Reset animation to start.
+ * @brief Reset the path-following animation to the beginning.
  */
 void PathFollower::reset() {
     currentTime = 0.0f;
@@ -422,9 +446,11 @@ void PathFollower::reset() {
 }
 
 /**
- * @brief Get the current state without advancing time.
+ * @brief Get the current state of the follower without updating time.
  *
- * @return PathState Current position, orientation, speed, and arc length.
+ * Returns the current position, orientation, speed, and normalized arc length.
+ *
+ * @return PathState Current state of the follower.
  */
 PathFollower::PathState PathFollower::getCurrentState() {
 

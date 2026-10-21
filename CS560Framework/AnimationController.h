@@ -46,6 +46,7 @@ private:
 
     bool debugOutput;
 
+    bool isMoving = false;
 
     void handlePhaseTransition();
     void updateAnimationSpeed(float currentSpeed);

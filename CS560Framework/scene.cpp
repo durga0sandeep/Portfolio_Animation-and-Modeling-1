@@ -1,14 +1,9 @@
 /**
  * @file scene.cpp
- * @brief Main scene implementation handling rendering, animation, UI, and camera logic.
+ * @brief Implements the Scene class for rendering characters, meshes, Bezier curves, and handling IK and animation.
  *
- * This file initializes and renders a deferred shading scene with:
- *  - Skinned animated character
- *  - Path-following using Bezier curves
- *  - Animation blending via AnimationController
- *  - Bone debugging
- *  - ImGui-based UI controls
- *
+ * The Scene class handles initialization, rendering, animation updates, camera control,
+ * and user interface elements using OpenGL, GLFW, GLM, and ImGui.
  */
 
 #include "math.h"
@@ -43,11 +38,14 @@ glm::mat4 Identity;
 
 #define CHECKERROR {GLenum err = glGetError(); if (err != GL_NO_ERROR) { fprintf(stderr, "OpenGL error (at line scene.cpp:%d): %s\n", __LINE__, gluErrorString(err)); exit(-1);} }
 
+
+
+static bool gIKEnabled = true;
+static bool gIKStarted = false;
+
+
 /**
- * @brief Initializes camera parameters
- *
- * Sets default position, orientation, movement speed,
- * clipping planes, and projection parameters.
+ * @brief Initialize the camera parameters
  */
 void Scene::InitCamera()
 {
@@ -56,7 +54,7 @@ void Scene::InitCamera()
     eye = glm::vec3(0.0, -20.0, 10.0);
     speed = 300.0 / 30.0;
     last_time = (float)glfwGetTime();
-    tr = glm::vec3(0.0, -3.0, 25.0);
+    tr = glm::vec3(0.0, -3.0, 45.0);
 
     ry = 0.4f;
     front = 0.5;
@@ -64,19 +62,21 @@ void Scene::InitCamera()
 }
 
 /**
- * @brief Initializes all scene resources
- *
- * This includes:
- *  - OpenGL states
- *  - G-buffer setup (deferred shading)
- *  - Shader programs
- *  - Model and animation clips
- *  - Bezier curve path
- *  - Path follower
- *  - Animation controller
+ * @brief Initialize the scene, including shaders, meshes, animation, IK, and path following
  */
 void Scene::InitializeScene()
 {
+
+    spherePosition = glm::vec3(14.0f, 0.0f, 5.0f);
+    sphereMoveSpeed = 2.0f;
+
+    moveLeft = false;
+    moveRight = false;
+    moveUp = false;
+    moveDown = false;
+    moveForward = false;
+    moveBackward = false;
+
     std::cout << "INIT\n";
     glEnable(GL_DEPTH_TEST);
     CHECKERROR;
@@ -116,6 +116,9 @@ void Scene::InitializeScene()
 	CurveProgram->LinkProgram();
 
 
+    //
+    //Solve it later ... InitializeScene
+
     CharTexture = new Texture("fbx/textures/roman_blue_D_texture.jpg");
 
     lightingProgram = new ShaderProgram();
@@ -130,6 +133,12 @@ void Scene::InitializeScene()
     lightingProgram->UseShader();
     CharTexture->BindTexture(0, lightingProgram->programId, "texture1");//
     
+    
+    /*
+    lightingProgram->UseShader();
+    charTexture->BindTexture(0, lightingProgram->programId, "texCoord");
+    */
+
 
     gBufferProgram = new ShaderProgram();
     gBufferProgram->AddShader("shaders/gBuffer.vert", GL_VERTEX_SHADER);
@@ -146,11 +155,16 @@ void Scene::InitializeScene()
     quad = new Quad();
 
     model = new Mesh();
-    model->LoadMesh(meshPat);
+    model->LoadMesh(meshPat, true); //moved the loading animations into this
+    //model->LoadAnimation();
+
+
+    sphereMesh = new Mesh();
+    sphereMesh->LoadMesh(spherePath, false);
 
 
     /*
-    * 
+    * Tracked these frames by oading the model in the Unity3D
     Idle - 0 to 338
     Run - 338 to 362
     Death - 362 to 442
@@ -160,22 +174,48 @@ void Scene::InitializeScene()
     */
 
     model->DefineAnimationClip("idle", 0, 0, 338, true);
-	model->SetAnimationYOffset("idle", 0.0f);
     model->DefineAnimationClip("run", 0, 339, 361, true);
-	model->SetAnimationYOffset("run", 0.0f);
     model->DefineAnimationClip("death", 0, 362, 442, true);
-	model->SetAnimationYOffset("death", 0.0f);
     model->DefineAnimationClip("attack", 0, 442, 510, true);
-	model->SetAnimationYOffset("attack", 0.0f);
     model->DefineAnimationClip("tpose", 0, 510, 540, true);
-	model->SetAnimationYOffset("tpose", 0.0f);
     
 	model->AddFullTrackAsClip(1,"walk", true);
-	model->SetAnimationYOffset("walk", 3.0f);
 
 	model->SetAnimation("run");
-	model->SetAnimationYOffset("run", 0.0f);
 
+    //
+    // ---------------- IK SETUP (once) ----------------
+    std::vector<std::string> armChain = {
+        "Spine2_rD_red",
+        "RightShoulder_rD_red",
+        "RightArm_rD_red",
+        "RightForeArm_rD_red",
+        "RightHand_rD_red"
+        //"Righttip_rD_red"
+    };
+
+    std::unordered_map<std::string, IKJointConstraint> jc;
+
+    // priorities + natural per-step limits
+    jc["RightShoulder_rD_red"] = IKJointConstraint{ IKJointConstraint::BALL, 0.8f, 6.0f };
+    jc["RightArm_rD_red"] = IKJointConstraint{ IKJointConstraint::BALL, 0.7f, 6.0f };
+
+    // elbow hinge (axis might need tuning)
+    IKJointConstraint elbow;
+    elbow.type = IKJointConstraint::HINGE;
+    elbow.weight = 0.9f;//0.8f
+    elbow.maxStepDeg = 7.0f;//10.0f;
+    elbow.hingeAxisLocal = glm::vec3(1, 0, 0); // if wrong, try (0,1,0) or (0,0,1)
+    jc["RightForeArm_rD_red"] = elbow;
+
+    // wrist smaller influence
+    jc["RightHand_rD_red"] = IKJointConstraint{ IKJointConstraint::BALL, 0.3f, 4.0f };//0.5f, 6.0f };
+
+    model->SetupIKChain(armChain, jc);
+    model->EnableIK(true);
+
+    //
+    
     //
     // Initialize Bezier Curve
     bezierCurve = new PathGenerator(100);
@@ -187,7 +227,7 @@ void Scene::InitializeScene()
     follower->setOrientationMode(PathFollower::LOOK_AHEAD_WITH_BANKING);
     follower->setLookAheadDistance(5.0f);  // Look 5% ahead on the path
     follower->setBankingFactor(0.4f);      // Moderate banking into turns
-    follower->setLooping(true);
+    follower->setLooping(false);
     follower->start();
 
 	float PathMaxSpeed = follower->getMaxSpeed();
@@ -195,16 +235,8 @@ void Scene::InitializeScene()
 //    float walkspeed = PathMaxSpeed * 0.8f;//0.35f;
 //    float runspeed = PathMaxSpeed;
 
-    /*
-    //
-    //Current Speed
     float walkspeed = PathMaxSpeed / 0.5f;//0.35f;
     float runspeed = PathMaxSpeed / 0.5f;
-    */
-    //New changes
-    float walkspeed = 2.0f;//0.35f;
-    float runspeed = 5.0f;
-
 
 /*
     float walkspeed = 4.0f;
@@ -216,13 +248,17 @@ void Scene::InitializeScene()
     animController->setDebugOutput(true);
 
 
+
     //start = glfwGetTime();
+
 
 }
 
 
 
-
+/**
+ * @brief Render the ImGui menu for controlling animation, curves, and models
+ */
 void Scene::DrawMenu()
 {
     ImGui_ImplOpenGL3_NewFrame();
@@ -232,9 +268,50 @@ void Scene::DrawMenu()
     ImGui::Begin("Sample UI Box");
     ImGui::Text("sample text");
 
+
+    const char* modelPaths[] = { "fbx/fbx/roman_D.fbx", "fbx/fbx/viking_C.fbx", "fbx/fbx/egyptian_B.fbx" };
+    const char* models[] = { "Roman", "Viking", "Egyptian" };
+    if (ImGui::BeginCombo("Model", current_model))
+    {
+        for (int n = 0; n < IM_ARRAYSIZE(models); n++)
+        {
+            bool is_selected = (current_model == models[n]);
+            if (ImGui::Selectable(models[n], is_selected))
+                current_model = models[n];
+            if (is_selected)
+                ImGui::SetItemDefaultFocus();
+        }
+
+        ImGui::EndCombo();
+    }
+
+        
+
+    if (ImGui::Button((play ? "Stop" : "Play")))
+    {
+        play = !play;
+    }
+
     ImGui::Checkbox("Draw Bone", &bone);
     ImGui::SameLine();
     ImGui::Checkbox("Draw Mesh", &mesh);
+
+    const char* items[] = { "Cycle", "Idle", "Run", "Fall Down", "Attack" };
+    const char* current_item = items[0];
+
+    if (ImGui::BeginCombo("Animation", items[0]))
+    {
+        for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+        {
+            bool is_selected = (current_item == items[n]);
+            if (ImGui::Selectable(items[n], is_selected))
+                current_item = items[n];
+            if (is_selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+
 
     ImGui::Separator();
 
@@ -296,6 +373,8 @@ void Scene::DrawMenu()
         }
     }
 
+
+
     ImGui::End();
 
 
@@ -305,10 +384,7 @@ void Scene::DrawMenu()
 }
 
 /**
- * @brief Builds camera transformations
- *
- * Handles keyboard input for camera translation,
- * rotation, zoom, and projection matrix creation.
+ * @brief Builds the world and projection transforms based on camera and user input
  */
 void Scene::BuildTransforms()
 {
@@ -340,13 +416,7 @@ void Scene::BuildTransforms()
 }
 
 /**
- * @brief Renders the entire scene
- *
- * Rendering pipeline:
- *  1. G-buffer pass (geometry)
- *  2. Lighting pass (fullscreen quad)
- *  3. Bone debug overlay
- *  4. Bezier curve visualization
+ * @brief Render the scene, including deferred shading, IK, animation, and debug visuals
  */
 void Scene::DrawScene()
 {
@@ -358,6 +428,17 @@ void Scene::DrawScene()
 
     int loc, programId;
 
+    //Draw the bones
+    /*
+    BoneProgram->UseShader();
+    programId = BoneProgram->programId;
+    loc = glGetUniformLocation(programId, "viewProj");
+    ResultMat = WorldProj * WorldView;
+    glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(ResultMat));
+    */
+
+    //
+    //charTexture->BindTexture(1, basicShader->programId, "texture1");
     CharTexture->ActivateTexture(0);//Activating Texture
 
 
@@ -382,7 +463,15 @@ void Scene::DrawScene()
     loc = glGetUniformLocation(programId, "WorldView");
     glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(WorldView));
 
+    /*
+    long double curr = glfwGetTime();
+    long double dt = ((float)(curr - start));
+    //std::cout << " +++ " << programId << std::endl;
+    animController->update((float)dt);
+    */
 
+
+    // CORRECT - Calculate actual delta time between frames
     static long double lastFrame = glfwGetTime();
     long double currentFrame = glfwGetTime();
     long double deltaTime = currentFrame - lastFrame;
@@ -393,8 +482,58 @@ void Scene::DrawScene()
         deltaTime = 0.1;
     }
 
+    loc = glGetUniformLocation(programId, "hasAnimation");
+    glUniform1i(loc, 1);
+
+    UpdateSphereMovement((float)deltaTime);
+
+
+    if (model && gIKEnabled)
+    {
+        glm::vec3 charPos = follower->getCurrentState().position;
+        float dist = glm::length(spherePosition - charPos);
+
+        // Start reach ONCE (do not restart every frame)
+        if (!gIKStarted && dist < 8.0f) {
+            model->EnableIK(true);
+            model->StartIKReachWorld(spherePosition, 0.35f); // smooth interpolated reach
+            gIKStarted = true;
+        }
+
+        // If already started, keep updating target while sphere moves
+        if (gIKStarted) {
+            model->SetIKTargetWorld(spherePosition);
+        }
+    }
+
+
+
+    // IK TARGET --- runtime 
+    // Start reach when the character is close to the sphere
+    static bool ikStarted = false;
+
+    glm::vec3 charPos = follower->getCurrentState().position;
+    float dist = glm::length(spherePosition - charPos);
+
+    if (!ikStarted && dist < 8.0f) {
+        model->StartIKReachWorld(spherePosition, 0.35f); // interpolated reach
+        ikStarted = true;
+    }
+
     animController->update((float)deltaTime);
     
+
+    loc = glGetUniformLocation(programId, "hasAnimation");
+    glUniform1i(loc, 0);
+
+    //glm::mat4 sphereTransform = Translate(0.0f, 0.0f, 5.0f) * Scale(2.0f, 2.0f, 2.0f);
+    glm::mat4 sphereTransform = Translate(spherePosition.x, spherePosition.y, spherePosition.z)
+        * Scale(2.0f, 2.0f, 2.0f);
+
+    DrawStaticMesh(sphereMesh, sphereTransform, glm::vec3(0.0f, 0.0f, 1.0f),
+        glm::vec3(0.5f, 0.5f, 0.5f), 32.0f, programId);
+
+
 
     gBuffer.UnbindFBO();
     gBufferProgram->UnuseShader();
@@ -408,7 +547,13 @@ void Scene::DrawScene()
     lightingProgram->UseShader();
     programId = lightingProgram->programId;
     
-
+    //charTexture->BindTexture(0, programId, "texCoord");
+    
+    /*
+    loc = glGetUniformLocation(programId, "texCoord");
+    glUniform1i(loc, CharTexture);
+    */
+    
     loc = glGetUniformLocation(programId, "WorldProj");
     glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(WorldProj));
     loc = glGetUniformLocation(programId, "WorldView");
@@ -477,7 +622,6 @@ void Scene::DrawScene()
         CurveProgram->UnuseShader();
     }
 
-
     // Handle wireframe mode
     if (mesh == false) {
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -488,6 +632,92 @@ void Scene::DrawScene()
 
 
 }
+
+/**
+ * @brief Draws a static mesh with given transform and material properties
+ * @param mesh Pointer to the mesh
+ * @param transform Model transform matrix
+ * @param diffuse Diffuse color
+ * @param specular Specular color
+ * @param shininess Specular shininess
+ * @param programId Shader program ID
+ */
+void Scene::DrawStaticMesh(Mesh* mesh, const glm::mat4& transform, const glm::vec3& diffuse,
+    const glm::vec3& specular, float shininess, int programId)
+{
+    /*
+    int loc = glGetUniformLocation(programId, "hasAnimation");
+    glUniform1i(loc, 0);
+    */
+
+    int loc = glGetUniformLocation(programId, "ModelTr");
+    glUniformMatrix4fv(loc, 1, GL_FALSE, &transform[0][0]);
+
+    glm::mat4 normalTr = glm::inverse(transform);
+    loc = glGetUniformLocation(programId, "NormalTr");
+    glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(normalTr));
+
+    loc = glGetUniformLocation(programId, "diffuse");
+    glUniform3fv(loc, 1, &diffuse[0]);
+    loc = glGetUniformLocation(programId, "specular");
+    glUniform3fv(loc, 1, &specular[0]);
+    loc = glGetUniformLocation(programId, "shininess");
+    glUniform1f(loc, shininess);
+
+    glBindVertexArray(mesh->m_vao);
+    int vertices = 0;
+    int indices = 0;
+    for (unsigned int i = 0; i < mesh->m_scene->mNumMeshes; ++i) {
+        int curr_indices = mesh->m_scene->mMeshes[i]->mNumFaces * 3;
+        glDrawElementsBaseVertex(GL_TRIANGLES, curr_indices, GL_UNSIGNED_INT,
+            (void*)(sizeof(unsigned int) * indices), vertices);
+        vertices += mesh->m_scene->mMeshes[i]->mNumVertices;
+        indices += curr_indices;
+    }
+    glBindVertexArray(0);
+}
+
+
+/**
+ * @brief Updates the sphere's movement based on user input
+ * @param deltaTime Time elapsed since last frame
+ */
+void Scene::UpdateSphereMovement(float deltaTime)
+{
+    bool sphereMoved = false;
+    float moveDistance = sphereMoveSpeed * deltaTime;
+
+    if (moveLeft) {
+        spherePosition.x -= moveDistance;
+        sphereMoved = true;
+    }
+    if (moveRight) {
+        spherePosition.x += moveDistance;
+        sphereMoved = true;
+    }
+    if (moveUp) {
+        spherePosition.y += moveDistance;
+        sphereMoved = true;
+    }
+    if (moveDown) {
+        spherePosition.y -= moveDistance;
+        sphereMoved = true;
+    }
+    if (moveForward) {
+        spherePosition.z += moveDistance;
+        sphereMoved = true;
+    }
+    if (moveBackward) {
+        spherePosition.z -= moveDistance;
+        sphereMoved = true;
+    }
+
+
+}
+
+
+
+
 
 
 

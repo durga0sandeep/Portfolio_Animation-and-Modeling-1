@@ -1,22 +1,3 @@
-/**
- * @file Mesh.cpp
- * @brief Implements skeletal mesh loading, animation, blending, and rendering.
- *
- * This file contains the implementation of the Mesh class, which:
- * - Loads skinned meshes using Assimp
- * - Supports multiple animation tracks and clips
- * - Performs skeletal animation with interpolation
- * - Supports smooth animation blending
- * - Renders animated meshes using OpenGL
- * - Provides skeleton debug visualization
- *
- * Dependencies:
- * - OpenGL (glbinding)
- * - GLM
- * - Assimp
- *
- */
-
 #include <glbinding/gl/gl.h>
 #pragma warning(disable: 4251)
 #include <glbinding/Binding.h>
@@ -104,44 +85,14 @@ Mesh::~Mesh()
 {
 }
 
-/**
- * @brief Sets the playback speed multiplier for animations.
- *
- * A value of 1.0 plays animations at normal speed.
- * Values > 1.0 speed up the animation, values < 1.0 slow it down.
- *
- * @param speedMultiplier Animation speed multiplier
- */
-
 void Mesh::SetAnimationSpeed(float speedMultiplier)
 {
     m_animationSpeedMultiplier = speedMultiplier;
 }
 
-/**
- * @brief Gets the current animation speed multiplier.
- *
- * @return Current animation speed multiplier
- */
-
 float Mesh::GetAnimationSpeed() const
 {
     return m_animationSpeedMultiplier;
-}
-
-/**
- * @brief Stores the current model transformation matrix.
- *
- * This transform is used for:
- * - Skeleton debug rendering
- * - World-space bone visualization
- *
- * @param transform Model transformation matrix
- */
-
-void Mesh::SetCurrentModelTransform(const glm::mat4& transform)
-{
-    m_currentModelTransform = transform;
 }
 
 
@@ -149,10 +100,8 @@ void Mesh::SetCurrentModelTransform(const glm::mat4& transform)
 /**
  * @brief Loads a 3D mesh from file using Assimp
  */
-void Mesh::LoadMesh(const std::string& path)
+void Mesh::LoadMesh(const std::string& path, bool AnimFlag)
 {
-
-
     m_pnt.clear();
     m_norm.clear();
     m_tex.clear();
@@ -164,6 +113,7 @@ void Mesh::LoadMesh(const std::string& path)
     nodeGlobalTransforms.clear();
     m_animationTracks.clear();
     m_animationClips.clear();
+
 
     Importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
     m_scene = Importer.ReadFile(path.c_str(), aiProcess_Triangulate
@@ -184,17 +134,24 @@ void Mesh::LoadMesh(const std::string& path)
     m_inverseTrans = m_inverseTrans.Inverse();
 
     InitMesh(path);
-    LoadAllAnimations();
+    
+    if (AnimFlag == true) {
+        LoadAllAnimations();
+    }
+
     MakeVAO();
 
-    std::cout << " " << std::endl;
-    std::cout << " " << std::endl;
-    std::cout << "Details: " << std::endl;
-    std::cout << "Model loaded: " << path << std::endl;
-    std::cout << "Meshes: " << m_scene->mNumMeshes << std::endl;
-    std::cout << "Animation Tracks: " << m_animationTracks.size() << std::endl;
-    std::cout << " " << std::endl;
-    std::cout << " " << std::endl;
+
+    if (AnimFlag == true) {
+        std::cout << " " << std::endl;
+        std::cout << " " << std::endl;
+        std::cout << "Details: " << std::endl;
+        std::cout << "Model loaded: " << path << std::endl;
+        std::cout << "Meshes: " << m_scene->mNumMeshes << std::endl;
+        std::cout << "Animation Tracks: " << m_animationTracks.size() << std::endl;
+        std::cout << " " << std::endl;
+        std::cout << " " << std::endl;
+    }
 }
 
 /**
@@ -442,19 +399,22 @@ float Mesh::GetClipLocalTime(float globalTime, const AnimationClip& clip) const
  */
 void Mesh::BlendToAnimation(const std::string& targetAnim, float blendDuration)
 {
+
     if (!HasAnimation(targetAnim)) {
-        std::cout << "Cannot blend to '" << targetAnim << "' - animation not found!" << std::endl;
+    //    std::cout << "Cannot blend to '" << targetAnim << "' - animation not found!" << std::endl;
         return;
     }
 
     if (m_currentAnimationName == targetAnim) {
-        std::cout << "Already playing '" << targetAnim << "'" << std::endl;
+      //  std::cout << "Already playing '" << targetAnim << "'" << std::endl;
         return;
     }
 
+    /*
     std::cout << "Starting blend from '" << m_currentAnimationName
         << "' to '" << targetAnim << "' over "
         << blendDuration << " seconds" << std::endl;
+    */
 
     m_isBlending = true;
     m_targetAnimationName = targetAnim;
@@ -463,10 +423,10 @@ void Mesh::BlendToAnimation(const std::string& targetAnim, float blendDuration)
     m_targetAnimationTime = 0.0f;
 }
 
+
+
 /**
- * @brief Returns the normalized blend progress.
- *
- * @return Blend progress in range [0, 1]
+ * @brief Gets the current blend progress
  */
 float Mesh::GetBlendProgress() const
 {
@@ -477,12 +437,7 @@ float Mesh::GetBlendProgress() const
 }
 
 /**
- * @brief Updates animation blending state.
- *
- * Advances blend timer and switches to the target animation
- * when blending completes.
- *
- * @param deltaTime Time elapsed since last frame
+ * @brief Updates blending state
  */
 void Mesh::UpdateBlending(float deltaTime)
 {
@@ -500,19 +455,7 @@ void Mesh::UpdateBlending(float deltaTime)
 }
 
 
-/**
- * @brief Extracts translation, rotation, and scale from a transformation matrix.
- *
- * This function decomposes a matrix into:
- * - Translation (vec3)
- * - Rotation (quaternion)
- * - Scale (vec3)
- *
- * @param m Input transformation matrix
- * @param translation Output translation vector
- * @param rotation Output rotation quaternion
- * @param scale Output scale vector
- */
+
 void Mesh::ExtractTRS(const glm::mat4& m, glm::vec3& translation, glm::quat& rotation, glm::vec3& scale)
 {
     // Translation (column-major)
@@ -574,21 +517,8 @@ glm::mat4 Mesh::BlendBoneTransforms(
 
 
 /**
- * @brief Renders the animated mesh using GPU skinning.
- *
- * This function:
- * - Advances animation time
- * - Handles animation looping and blending
- * - Computes final bone matrices
- * - Uploads bone matrices to the shader
- * - Applies path-following transforms
- * - Issues indexed draw calls
- *
- * @param programId Active OpenGL shader program ID
- * @param dt Delta time since last frame (seconds)
- * @param pathfollow PathFollower controlling object motion
+ * @brief Renders the animated mesh
  */
-
 void Mesh::Draw(int programId, long double dt, PathFollower& pathfollow)
 {
     glm::vec3 diffuseColor{ 0.7, 0.7, 0.5 };
@@ -600,8 +530,11 @@ void Mesh::Draw(int programId, long double dt, PathFollower& pathfollow)
         deltaTime = 0.1f;
     }
 
+    m_LastDeltaTime = deltaTime;
+
+
     //N-NEW
-    deltaTime *= m_animationSpeedMultiplier;
+//    deltaTime *= m_animationSpeedMultiplier;
 
     const AnimationClip* currentClip = GetCurrentClip();
     if (!currentClip) {
@@ -647,6 +580,19 @@ void Mesh::Draw(int programId, long double dt, PathFollower& pathfollow)
         }
     }
 
+    PathFollower::PathState state = pathfollow.getCurrentState();
+
+    glm::mat4 objectTr = glm::mat4(1.0f);
+    objectTr[0] = glm::vec4(state.right * scaleFactor, 0.0f);
+    objectTr[1] = glm::vec4(state.up * scaleFactor, 0.0f);
+    objectTr[2] = glm::vec4(state.forward * scaleFactor, 0.0f);
+    objectTr[3] = glm::vec4(state.position, 1.0f);
+
+
+    m_ModelTr = objectTr;
+    m_ModelTrInv = glm::inverse(objectTr);
+
+
     CalFinalTransformations();
 
     CHECKERROR;
@@ -674,19 +620,16 @@ void Mesh::Draw(int programId, long double dt, PathFollower& pathfollow)
         loc = glGetUniformLocation(programId, "shininess");
         glUniform1f(loc, shininess);
         CHECKERROR;
-
+        
+        /*
         PathFollower::PathState state = pathfollow.getCurrentState();
-
-        float yOffset = GetAnimationYOffset(m_currentAnimationName);
-        glm::vec3 adjustedPosition = state.position + glm::vec3(0, 0, yOffset);
 
         glm::mat4 objectTr = glm::mat4(1.0f);
         objectTr[0] = glm::vec4(state.right * scaleFactor, 0.0f);
         objectTr[1] = glm::vec4(state.up * scaleFactor, 0.0f);
         objectTr[2] = glm::vec4(state.forward * scaleFactor, 0.0f);
-        objectTr[3] = glm::vec4(adjustedPosition, 1.0f);
-
-		m_currentModelTransform = objectTr;
+        objectTr[3] = glm::vec4(state.position, 1.0f);
+        */
 
         //std::cout << "Character Position: " << state.position.x << ", " << state.position.y << ", " << state.position.z << std::endl;
         //std::cout << "Forward: " << state.forward.x << ", " << state.forward.y << ", " << state.forward.z << std::endl;
@@ -694,7 +637,7 @@ void Mesh::Draw(int programId, long double dt, PathFollower& pathfollow)
         loc = glGetUniformLocation(programId, "ModelTr");
         glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(objectTr));
 
-        glm::mat4 inv = glm::inverse(objectTr);
+        glm::mat4 inv = m_ModelTrInv; //glm::inverse(objectTr);
         loc = glGetUniformLocation(programId, "NormalTr");
         glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(inv));
 
@@ -837,10 +780,7 @@ void Mesh::InitMesh(const std::string& path)
 }
 
 /**
- * @brief Initializes bone weights and offsets for a mesh.
- *
- * @param mesh Assimp mesh containing bone data
- * @param index Vertex offset into global vertex array
+ * @brief Initializes bone data for a specific mesh
  */
 void Mesh::InitBone(const aiMesh* mesh, int index)
 {
@@ -868,10 +808,7 @@ void Mesh::InitBone(const aiMesh* mesh, int index)
 
 
 /**
- * @brief Gets or assigns a unique ID for a bone.
- *
- * @param b Assimp bone pointer
- * @return Unique bone ID
+ * @brief Gets or creates a unique ID for a bone
  */
 int Mesh::GetBoneId(const aiBone* b)
 {
@@ -897,14 +834,7 @@ void Mesh::PrintValues()
 }
 
 /**
- * @brief Computes final bone matrices for the current animation frame.
- *
- * Handles:
- * - Clip-local timing
- * - Hierarchical bone traversal
- * - Animation blending
- * - Bone offset application
- * - Global inverse transformation
+ * @brief Calculates final bone transformations for the current animation time
  */
 void Mesh::CalFinalTransformations()
 {
@@ -966,6 +896,7 @@ void Mesh::CalFinalTransformations()
     else {
         ReadNodeHierarchy(currentAnimationTime, m_scene->mRootNode, identity, currentTrack);
 
+        /*
         static int frameCount = 0;
         if (frameCount % 60 == 0) {
             std::cout << "Clip: " << currentClip->name
@@ -975,7 +906,10 @@ void Mesh::CalFinalTransformations()
                 << " | Range: " << currentClip->startTime << "-" << currentClip->endTime << std::endl;
         }
         frameCount++;
+        */
     }
+
+    ApplyIK();
 
     for (size_t i = 0; i < m_boneInfo.size(); i++) {
         glm::mat4 finalTrans = convert(m_boneInfo[i].FinalTransformation);
@@ -983,20 +917,15 @@ void Mesh::CalFinalTransformations()
         glm::mat4 result = globalInverseTransform * finalTrans * offset;
         m_boneInfo[i].FinalTransformation = convert(result);
     }
+
+
 }
 
-/**
- * @brief Recursively evaluates the bone hierarchy.
- *
- * Computes global transformations for each bone node
- * based on interpolated animation data.
- *
- * @param animationTime Current animation time (ticks)
- * @param node Current Assimp node
- * @param parentTransform Parent transformation matrix
- * @param track Animation track data
- */
 
+
+/**
+ * @brief Recursively traverses the scene graph to calculate bone transformations
+ */
 void Mesh::ReadNodeHierarchy(float animationTime, const aiNode* node,
     const glm::mat4& parentTransform, const Animation& track)
 {
@@ -1046,7 +975,6 @@ void Mesh::ReadNodeHierarchy(float animationTime, const aiNode* node,
         ReadNodeHierarchy(animationTime, node->mChildren[i], globalTransformation, track);
     }
 }
-
 
 /*
 void Mesh::ReadNodeHierarchy(float animationTime, const aiNode* node,
@@ -1193,10 +1121,7 @@ void Mesh::DataPrint()
 }
 
 /**
- * @brief Creates VAO and VBO for skeleton line rendering.
- *
- * @param VAO Output vertex array object
- * @param VBO Output vertex buffer object
+ * @brief Sets up VAO and VBO for line rendering
  */
 void Mesh::SetupLineVAO(GLuint& VAO, GLuint& VBO)
 {
@@ -1215,15 +1140,8 @@ void Mesh::SetupLineVAO(GLuint& VAO, GLuint& VBO)
 }
 
 /**
- * @brief Draws a single debug line segment.
- *
- * @param start Line start position
- * @param end Line end position
- * @param shader Shader program ID
- * @param VAO Line VAO
- * @param VBO Line VBO
+ * @brief Draws a single line between two points
  */
-
 void Mesh::DrawLine(const glm::vec3& start, const glm::vec3& end, GLuint shader, GLuint VAO, GLuint VBO)
 {
     glm::vec3 lineVertices[2] = { start, end };
@@ -1256,28 +1174,19 @@ void Mesh::DebugSkeleton(const glm::mat4& viewProj, GLuint shader)
     glDisable(GL_DEPTH_TEST);
     glLineWidth(3.0f);
 
-    /*
     glm::mat4 modelTr = Translate(0.f, 0.f, -2.5f) *
         Rotate(0, 90.f) *
         Scale(0.1f, 0.1f, 0.1f);
-    */
 
-    DrawSkeletonRecursive(m_scene->mRootNode, m_currentModelTransform, shader, lineVAO, lineVBO);
+    DrawSkeletonRecursive(m_scene->mRootNode, modelTr, shader, lineVAO, lineVBO);
 
     glLineWidth(1.0f);
     glEnable(GL_DEPTH_TEST);
 }
 
 /**
- * @brief Recursively draws skeleton bones as line segments.
- *
- * @param node Current Assimp node
- * @param modelTransform Model transformation matrix
- * @param shader Shader program ID
- * @param lineVAO Line VAO
- * @param lineVBO Line VBO
+ * @brief Recursively draws skeleton bones as lines
  */
-
 void Mesh::DrawSkeletonRecursive(const aiNode* node, const glm::mat4& modelTransform,
     GLuint shader, GLuint lineVAO, GLuint lineVBO)
 {
@@ -1314,26 +1223,367 @@ void Mesh::DrawSkeletonRecursive(const aiNode* node, const glm::mat4& modelTrans
     }
 }
 
+
+
+static float SafeAcos(float x)
+{
+    return acosf(glm::clamp(x, -1.0f, 1.0f));
+}
+
+
 /**
- * @brief Sets a vertical offset for a specific animation.
- *
- * Useful for correcting foot sliding or root motion issues.
- *
- * @param animName Animation clip name
- * @param offset Vertical Y offset
+ * @brief Sets up the inverse kinematics chain with optional constraints
+ * @param chain Ordered list of bone names from root to end-effector
+ * @param constraints Map of bone names to rotational constraints
  */
-void Mesh::SetAnimationYOffset(const std::string& animName, float offset) {
-    m_animationYOffsets[animName] = offset;
+void Mesh::SetupIKChain(
+    const std::vector<std::string>& chain,
+    const std::unordered_map<std::string, IKJointConstraint>& constraints)
+{
+    m_IKChain = chain;
+    m_IKConstraints = constraints;
 }
 
 /**
- * @brief Gets the vertical offset for an animation.
- *
- * @param animName Animation clip name
- * @return Vertical Y offset
+ * @brief Enables or disables IK solving
+ * @param enable True to enable IK, false to disable
  */
-float Mesh::GetAnimationYOffset(const std::string& animName) const {
-    auto it = m_animationYOffsets.find(animName);
-    return (it != m_animationYOffsets.end()) ? it->second : 0.0f;
+void Mesh::EnableIK(bool enable)
+{
+    m_IKEnabled = enable;
+    if (!m_IKEnabled) {
+        m_IKActive = false;
+        m_IKTimer = 0.0f;
+    }
 }
 
+/**
+ * @brief Starts IK to move the end-effector to a world-space target
+ * @param worldTarget Target position in world coordinates
+ * @param durationSec Duration of IK interpolation in seconds
+ */
+void Mesh::StartIKReachWorld(const glm::vec3& worldTarget, float durationSec)
+{
+    m_IKTargetWorld = worldTarget;
+    m_IKDuration = glm::max(0.01f, durationSec);
+    m_IKTimer = 0.0f;
+    m_IKActive = true;
+
+    std::cout << "[IK] Chain:\n";
+    for (auto& n : m_IKChain) std::cout << "  " << n << "\n";
+
+}
+
+/**
+ * @brief Stops the current IK operation
+ */
+void Mesh::StopIK()
+{
+    m_IKActive = false;
+    m_IKTimer = 0.0f;
+}
+
+
+/**
+ * @brief Get the global transformation matrix of a node by name.
+ *
+ * @param name Name of the node.
+ * @return glm::mat4 The global transform of the node. Returns identity matrix if node is not found.
+ */
+glm::mat4 Mesh::GetNodeGlobal(const std::string& name) const
+{
+    auto it = nodeGlobalTransforms.find(name);
+    if (it == nodeGlobalTransforms.end()) return glm::mat4(1.0f);
+    return it->second;
+}
+
+/**
+ * @brief Get the world position of a node by name.
+ *
+ * @param name Name of the node.
+ * @return glm::vec3 The position of the node in world/mesh space.
+ */
+glm::vec3 Mesh::GetNodePosition(const std::string& name) const
+{
+    glm::mat4 g = GetNodeGlobal(name);
+    return glm::vec3(g[3]);
+}
+
+/**
+ * @brief Rotate all nodes in the IK chain after a given joint.
+ *
+ * @param jointIndex Index of the joint in the IK chain.
+ * @param jointPos Position of the joint in world/mesh space.
+ * @param axisGlobal Axis to rotate around in world/mesh space.
+ * @param angleRad Rotation angle in radians.
+ *
+ * This function applies a rotation around a joint and propagates it down
+ * the IK chain to affect all child nodes. Updates bone transformations
+ * if the node is part of a skinned mesh.
+ */
+void Mesh::RotateChainFromJoint(
+    int jointIndex,
+    const glm::vec3& jointPos,
+    const glm::vec3& axisGlobal,
+    float angleRad)
+{
+    if (fabs(angleRad) < 1e-7f) return;
+
+    glm::vec3 axis = glm::normalize(axisGlobal);
+
+    glm::mat4 T = glm::translate(glm::mat4(1.0f), jointPos);
+    glm::mat4 Ti = glm::translate(glm::mat4(1.0f), -jointPos);
+    glm::mat4 R = glm::toMat4(glm::angleAxis(angleRad, axis));
+
+    glm::mat4 M = T * R * Ti;
+
+    // Rotate every node after this joint in the IK chain
+    for (int k = jointIndex + 1; k < (int)m_IKChain.size(); ++k) {
+        const std::string& nodeName = m_IKChain[k];
+
+        auto it = nodeGlobalTransforms.find(nodeName);
+        if (it != nodeGlobalTransforms.end()) {
+            it->second = M * it->second;
+
+            // Keep m_boneInfo consistent if this node is a skinned bone
+            auto bi = m_name_index.find(nodeName);
+            if (bi != m_name_index.end()) {
+                int boneIndex = bi->second;
+                m_boneInfo[boneIndex].FinalTransformation = convert(it->second);
+            }
+        }
+    }
+}
+
+/**
+ * @brief Perform the IK solving step for the mesh.
+ *
+ * This function applies Inverse Kinematics (IK) to move the end-effector
+ * towards the target. Supports pole constraints to prevent unnatural elbow
+ * bending. Uses interpolation to move smoothly over time.
+ */
+void Mesh::ApplyIK()
+{
+    if (!m_IKEnabled || !m_IKActive) return;
+    if (m_IKChain.size() < 2) return;
+
+    // DEBUG (TEMP): print chain node positions
+    static int dbg = 0;
+    if ((dbg++ % 60) == 0) { // print once per ~60 frames
+        std::cout << "---- IK Chain positions ----\n";
+        for (auto& n : m_IKChain) {
+            glm::vec3 p = GetNodePosition(n);
+            std::cout << n << ": " << p.x << ", " << p.y << ", " << p.z << "\n";
+        }
+    }
+
+
+    // Convert target from world space -> mesh local space
+    glm::vec3 targetLocal = glm::vec3(m_ModelTrInv * glm::vec4(m_IKTargetWorld, 1.0f));
+
+    const std::string& endName = m_IKChain.back();
+    glm::vec3 effLocal = GetNodePosition(endName);
+
+    // Capture starting effector position once (for interpolation)
+    if (m_IKTimer <= 0.0f) {
+        m_IKStartEffectorLocal = effLocal;
+    }
+
+    // Interpolate desired effector motion (rubric requirement)
+    m_IKTimer += m_LastDeltaTime;
+    float alpha = glm::clamp(m_IKTimer / m_IKDuration, 0.0f, 1.0f);
+
+    glm::vec3 desiredTarget = glm::mix(m_IKStartEffectorLocal, targetLocal, alpha);
+    glm::vec3 biasDir = glm::vec3(0, 0, -1); // try +Z then -Z
+    desiredTarget += 0.05f * biasDir;
+
+
+    // --- Pole constraint (strong elbow side control) ---
+    // --- Strong pole constraint to prevent backward elbow ---
+    if (m_IKChain.size() >= 5) {
+        const std::string& shoulderName = m_IKChain[1];
+        const std::string& elbowName = m_IKChain[3];
+        const std::string& handName = m_IKChain[4];
+
+        glm::vec3 S = GetNodePosition(shoulderName);
+        glm::vec3 E = GetNodePosition(elbowName);
+        glm::vec3 H = GetNodePosition(handName);
+
+        glm::vec3 sh = H - S;
+        if (glm::length(sh) > 1e-6f) {
+            sh = glm::normalize(sh);
+
+            // Choose a pole direction in mesh-local space.
+            // Since your elbow Z is going negative (backwards), we want to bias toward +Z.
+            glm::vec3 pole = glm::vec3(0, 0, 1);
+
+            glm::vec3 n = glm::cross(sh, pole);
+            if (glm::length(n) > 1e-6f) {
+                n = glm::normalize(n);
+
+                float side = glm::dot(E - S, n);
+
+                // If elbow is on the wrong side, push the desiredTarget to the correct side
+                if (side < 0.0f) {
+                    desiredTarget += 0.5f * n; // tune 0.2 to 0.8
+                }
+            }
+        }
+    }
+
+
+
+
+    SolveCCD(desiredTarget);
+
+    // Optional: if you want to stop once it reaches the final target:
+    // if (alpha >= 1.0f && glm::length(GetNodePosition(endName) - targetLocal) < 0.10f) {
+    //     m_IKActive = false;
+    // }
+}
+
+
+/**
+ * @brief Solve IK using the Cyclic Coordinate Descent (CCD) method.
+ *
+ * @param targetLocal Target position in mesh-local coordinates.
+ *
+ * Iteratively rotates joints along the IK chain to bring the end-effector
+ * closer to the target. Supports hinge and ball joints with constraints,
+ * and includes pole constraint for natural elbow bending.
+ */
+void Mesh::SolveCCD(const glm::vec3& targetLocal)
+{
+    const int maxIters = 12;
+    const float eps = 0.10f;
+
+    const std::string& endName = m_IKChain.back();
+
+    for (int iter = 0; iter < maxIters; ++iter) {
+        glm::vec3 effPos = GetNodePosition(endName);
+        if (glm::length(effPos - targetLocal) < eps) break;
+
+        // CCD: iterate joints from end-1 down to root
+        for (int j = (int)m_IKChain.size() - 2; j >= 0; --j) {
+            const std::string& jointName = m_IKChain[j];
+
+            glm::vec3 jointPos = GetNodePosition(jointName);
+            effPos = GetNodePosition(endName);
+
+            glm::vec3 toEff = effPos - jointPos;
+            glm::vec3 toTar = targetLocal - jointPos;
+
+            float lenEff = glm::length(toEff);
+            float lenTar = glm::length(toTar);
+            if (lenEff < 1e-6f || lenTar < 1e-6f) continue;
+
+            toEff /= lenEff;
+            toTar /= lenTar;
+
+            IKJointConstraint c;
+            auto cit = m_IKConstraints.find(jointName);
+            if (cit != m_IKConstraints.end()) c = cit->second;
+
+            float maxStepRad = glm::radians(c.maxStepDeg);
+
+            if (c.type == IKJointConstraint::HINGE) {
+                // Hinge axis in global space: jointRotation * hingeAxisLocal
+                glm::mat4 jointG = GetNodeGlobal(jointName);
+                glm::mat3 jointR = glm::mat3(jointG);
+                glm::vec3 hingeAxisGlobal = glm::normalize(jointR * c.hingeAxisLocal);
+
+                // signed angle around hinge axis
+                float signedAngle = atan2f(
+                    glm::dot(hingeAxisGlobal, glm::cross(toEff, toTar)),
+                    glm::dot(toEff, toTar)
+                );
+
+                // priority + clamp per step
+                signedAngle *= c.weight;
+                signedAngle = glm::clamp(signedAngle, -maxStepRad, maxStepRad);
+
+                RotateChainFromJoint(j, jointPos, hingeAxisGlobal, signedAngle);
+            }
+            else {
+                // Ball joint
+                glm::vec3 axis = glm::cross(toEff, toTar);
+                float axisLen = glm::length(axis);
+                if (axisLen < 1e-7f) continue;
+                axis /= axisLen;
+
+                float angle = SafeAcos(glm::dot(toEff, toTar));
+
+                // priority + clamp per step
+                angle *= c.weight;
+                angle = glm::clamp(angle, -maxStepRad, maxStepRad);
+
+                RotateChainFromJoint(j, jointPos, axis, angle);
+            }
+        }
+
+
+        // ---- Pole constraint (prevents elbow bending backward) ----
+        if (m_IKChain.size() >= 4) {
+            // Typical chain indices:
+            // 0 spine/shoulderRoot, 1 shoulder, 2 upperarm, 3 forearm(elbow), 4 hand...
+            const std::string& shoulderName = m_IKChain[1];
+            const std::string& elbowName = m_IKChain[3];
+            const std::string& handName = m_IKChain[4]; // or endName if you prefer
+
+            glm::vec3 S = GetNodePosition(shoulderName);
+            glm::vec3 E = GetNodePosition(elbowName);
+            glm::vec3 H = GetNodePosition(handName);
+
+            glm::vec3 sh = glm::normalize(H - S);
+            if (glm::length(sh) > 1e-6f) {
+
+                // Choose a pole direction (tune this!)
+                // Try (0,0,1) then (0,0,-1) then (1,0,0) etc.
+                glm::vec3 pole = glm::vec3(0, 0, 1);
+
+                // Create a plane normal using sh and pole
+                glm::vec3 n = glm::cross(sh, pole);
+                float nlen = glm::length(n);
+                if (nlen > 1e-6f) {
+                    n /= nlen;
+
+                    // Project elbow onto plane to remove "wrong side" bending
+                    glm::vec3 Eproj = ProjectPointOntoPlane(E, S, n);
+
+                    // Nudge target slightly so CCD prefers that side
+                    // This is a stable trick without rewriting rotations.
+                    glm::vec3 correction = (Eproj - E);
+                    // small correction only
+                    targetLocal + 0.15f * correction; // <-- (see note below)
+                }
+            }
+        }
+
+
+    }
+}
+
+
+/**
+ * @brief Project a point onto a plane.
+ *
+ * @param p Point to project.
+ * @param planePoint A point on the plane.
+ * @param planeNormal Normal vector of the plane (assumed normalized).
+ * @return glm::vec3 Projected point on the plane.
+ */
+glm::vec3 Mesh::ProjectPointOntoPlane(const glm::vec3& p, const glm::vec3& planePoint, const glm::vec3& planeNormal)
+{
+    float d = glm::dot(p - planePoint, planeNormal);
+    return p - d * planeNormal;
+}
+
+/**
+ * @brief Set the IK target position in world coordinates.
+ *
+ * @param worldTarget Target position in world space.
+ */
+void Mesh::SetIKTargetWorld(const glm::vec3& worldTarget)
+{
+    m_IKTargetWorld = worldTarget;
+}

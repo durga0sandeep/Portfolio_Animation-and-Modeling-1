@@ -33,6 +33,10 @@ public:
     std::string meshPat = "fbx/fbx/roman_D.fbx";
     const char* current_model = "Roman";
 
+    std::string spherePath = "fbx/fbx/box.fbx";
+
+
+
     // Light parameters
     float lightSpin, lightTilt, lightDist;
     glm::vec3 lightPos = {-30.0f, -60.f, 90.0f};
@@ -65,6 +69,11 @@ public:
     Mesh* model;
     Shape* quad; //deferred shading
     Texture* CharTexture;
+    Mesh* sphereMesh;
+
+    glm::vec3 spherePosition;
+    float sphereMoveSpeed;
+
 
     AnimationController* animController;
 
@@ -87,10 +96,26 @@ public:
     void DrawMenu();
     void DrawScene();
 
+
+    void DrawStaticMesh(Mesh* mesh, const glm::mat4& transform, const glm::vec3& diffuse,
+        const glm::vec3& specular, float shininess, int programId);
+
+    void UpdateSphereMovement(float deltaTime);
+
+
+    bool moveLeft;
+    bool moveRight;
+    bool moveUp;
+    bool moveDown;
+    bool moveForward;
+    bool moveBackward;
+
+	PathFollower* follower;
+
+
 private:
 
     PathGenerator* bezierCurve;
-	PathFollower* follower;
 
     bool showCurve = true;
 

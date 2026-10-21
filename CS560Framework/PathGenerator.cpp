@@ -4,9 +4,9 @@
 /**
  * @brief Calculate the binomial coefficient "n choose k".
  *
- * @param n The total number of items.
- * @param k The number of items to choose.
- * @return int The binomial coefficient.
+ * @param n Total number of items.
+ * @param k Number of items to choose.
+ * @return int Binomial coefficient value. Returns 0 if k > n.
  */
 int PathGenerator::binomial(int n, int k) {
     if (k > n) return 0;
@@ -22,10 +22,10 @@ int PathGenerator::binomial(int n, int k) {
 
 
 /**
- * @brief Update the vertices of the curve and upload them to the VBO.
+ * @brief Update the vertices of the curve in the VBO using cubic Bezier segments.
  *
- * This function recalculates the curve vertices for all segments of the
- * closed cubic Bezier curve and updates the OpenGL vertex buffer.
+ * This function iterates over all cubic Bezier segments formed by control points,
+ * evaluates points along each segment, and updates the OpenGL VBO with the vertex data.
  */
 void PathGenerator::updateCurveVertices() {
     curveVertices.clear();
@@ -34,7 +34,9 @@ void PathGenerator::updateCurveVertices() {
     // Seg 1: [0, 1, 2, 3]
     // Seg 2: [3, 4, 5, 6]
     // Seg 3: [6, 7, 8, 0] <-- The Wrap Around
-    int numSegments = NUM_POINTS / 3;
+    //int numSegments = NUM_POINTS / 3;
+    int numSegments = (NUM_POINTS - 1) / 3;
+
 
     for (int seg = 0; seg < numSegments; seg++) {
         int i0 = (seg * 3) % NUM_POINTS;
@@ -57,7 +59,7 @@ void PathGenerator::updateCurveVertices() {
         }
     }
     // Add very last point to close the visual loop exactly
-    curveVertices.push_back(controlPoints[0]);
+    //curveVertices.push_back(controlPoints[0]);
 
     // Update VBO
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -67,14 +69,14 @@ void PathGenerator::updateCurveVertices() {
 
 
 /**
- * @brief Evaluate a cubic Bezier curve at parameter t using De Casteljau's algorithm.
+ * @brief Evaluate a cubic Bezier curve at a given parameter t using De Casteljau's formula.
  *
  * @param p0 First control point.
  * @param p1 Second control point.
  * @param p2 Third control point.
  * @param p3 Fourth control point.
- * @param t Parameter in [0, 1] to evaluate the curve.
- * @return glm::vec3 The position on the Bezier curve at t.
+ * @param t Parameter in [0, 1].
+ * @return glm::vec3 Point on the curve at parameter t.
  */
 glm::vec3 PathGenerator::evaluateCubicBezier(
     const glm::vec3& p0, const glm::vec3& p1,
@@ -91,63 +93,40 @@ glm::vec3 PathGenerator::evaluateCubicBezier(
 /**
  * @brief Constructor for PathGenerator.
  *
- * Initializes control points, creates VAO/VBO, and builds the initial curve
- * and arc-length lookup tables.
+ * Initializes control points along a straight line, sets up OpenGL VAO/VBO,
+ * updates curve vertices, and builds the arc length lookup tables.
  *
- * @param res The resolution (number of points) for curve rendering.
+ * @param res Resolution of the curve (number of vertices per segment).
  */
 PathGenerator::PathGenerator(int res) : resolution(res) {
-    // Initialize control points in a wave pattern
-    float radius = 15.0f;
+    // Define start and end points for a straight line
+    glm::vec3 startPoint(-20.0f, 0.0f, 0.0f);
+    glm::vec3 endPoint(20.0f, 0.0f, 0.0f);
 
-    // Create a smooth closed loop using 3 cubic Bezier segments
-    for (int i = 0; i < 3; i++)
-    {
-        float angle = (i * 2.0f * 3.14159f) / 3.0f;
-        float nextAngle = ((i + 1) * 2.0f * 3.14159f) / 3.0f;
-
-        // Node
-        controlPoints[i * 3] =
-            glm::vec3(cos(angle) * radius,
-                sin(angle) * radius,
-                0.0f);
-
-        // Outgoing handle
-        glm::vec3 tangent(-sin(angle), cos(angle), 0.0f);
-        controlPoints[i * 3 + 1] =
-            controlPoints[i * 3] + tangent * (radius * 0.8f);
-
-        // Incoming handle for next node
-        glm::vec3 nextNode =
-            glm::vec3(cos(nextAngle) * radius,
-                sin(nextAngle) * radius,
-                0.0f);
-
-        glm::vec3 nextTangent(-sin(nextAngle), cos(nextAngle), 0.0f);
-        controlPoints[i * 3 + 2] =
-            nextNode - nextTangent * (radius * 0.8f);
+    // Distribute all 9 control points evenly along the line
+    // This ensures that even with multiple Bezier segments, the path is perfectly straight
+    for (int i = 0; i < NUM_POINTS; i++) {
+        float t = (float)i / (float)(NUM_POINTS - 1);
+        controlPoints[i] = startPoint + t * (endPoint - startPoint);
     }
 
-
-    // Create VAO and VBO
+    // Standard initialization remains the same
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
-
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
     glEnableVertexAttribArray(0);
-
     glBindVertexArray(0);
 
     updateCurveVertices();
     buildArcLengthTables();
 }
     
-
 /**
- * @brief Destructor. Deletes OpenGL VAO/VBO.
+ * @brief Destructor for PathGenerator.
+ *
+ * Cleans up OpenGL VAO and VBO resources.
  */
 PathGenerator::~PathGenerator() {
     glDeleteVertexArrays(1, &vao);
@@ -157,60 +136,58 @@ PathGenerator::~PathGenerator() {
 /**
  * @brief Set the position of a control point.
  *
- * Automatically updates neighboring handles to maintain C1 continuity.
+ * Also maintains C1 continuity of the curve by adjusting neighboring handles.
  *
- * @param index Index of the control point [0, NUM_POINTS-1].
- * @param point New position for the control point.
+ * @param index Index of the control point to set.
+ * @param point New position of the control point (y and z are set to 0).
  */
 void PathGenerator::setControlPoint(int index, const glm::vec3& point) {
     if (index < 0 || index >= NUM_POINTS) return;
 
-    glm::vec3 delta = point - controlPoints[index];
-    controlPoints[index] = point;
+    glm::vec3 newPoint = point;
+    newPoint.y = 0.0f;
+    newPoint.z = 0.0f;
 
-    // --- ENFORCE SMOOTHNESS (C1 Continuity) ---
+    glm::vec3 delta = newPoint - controlPoints[index];
+    controlPoints[index] = newPoint;
 
-    // Case A: You moved a Node (0, 3, 6)
+    // Keep existing C1 continuity logic
     if (index % 3 == 0) {
-        // Move the handle before it and after it
         int prevHandle = (index - 1 + NUM_POINTS) % NUM_POINTS;
         int nextHandle = (index + 1) % NUM_POINTS;
         controlPoints[prevHandle] += delta;
         controlPoints[nextHandle] += delta;
     }
-    // Case B: You moved a Handle (1, 2, 4, 5, 7, 8)
     else {
         int node = -1;
         int oppositeHandle = -1;
 
-        if ((index + 1) % 3 == 0) { // It's a "left" handle (2, 5, 8)
+        if ((index + 1) % 3 == 0) {
             node = (index + 1) % NUM_POINTS;
             oppositeHandle = (index + 2) % NUM_POINTS;
         }
-        else if ((index - 1) % 3 == 0) { // It's a "right" handle (1, 4, 7)
+        else if ((index - 1) % 3 == 0) {
             node = (index - 1 + NUM_POINTS) % NUM_POINTS;
             oppositeHandle = (index - 2 + NUM_POINTS) % NUM_POINTS;
         }
 
         if (node != -1) {
-            // Keep the opposite handle in a straight line
-            glm::vec3 dir = controlPoints[index] - controlPoints[node];
-            float lengthOpposite = glm::length(controlPoints[oppositeHandle] - controlPoints[node]);
-            if (glm::length(dir) > 0.001f) {
-                controlPoints[oppositeHandle] = controlPoints[node] - glm::normalize(dir) * lengthOpposite;
-            }
+            float dx = controlPoints[index].x - controlPoints[node].x;
+            controlPoints[oppositeHandle].x = controlPoints[node].x - dx;
+            controlPoints[oppositeHandle].y = 0.0f;
+            controlPoints[oppositeHandle].z = 0.0f;
         }
     }
 
     updateCurveVertices();
-    buildArcLengthTables();  // Rebuild tables when curve changes
+    buildArcLengthTables();
 }
 
 /**
  * @brief Get the position of a control point.
  *
  * @param index Index of the control point.
- * @return glm::vec3 Position of the control point.
+ * @return glm::vec3 Position of the control point. Returns (0,0,0) if index is invalid.
  */
 glm::vec3 PathGenerator::getControlPoint(int index) const {
     if (index >= 0 && index < NUM_POINTS) {
@@ -220,18 +197,18 @@ glm::vec3 PathGenerator::getControlPoint(int index) const {
 }
 
 /**
- * @brief Get the number of control points.
+ * @brief Get the total number of control points.
  *
- * @return int Number of points in the curve.
+ * @return int Number of control points (NUM_POINTS).
  */
 int PathGenerator::getNumPoints() const {
     return NUM_POINTS;
 }
 
 /**
- * @brief Set the resolution of the curve.
+ * @brief Set the resolution of the curve and update vertices and arc length tables.
  *
- * @param res Number of points to generate along the curve.
+ * @param res Number of vertices per segment.
  */
 void PathGenerator::setResolution(int res) {
     resolution = res;
@@ -240,7 +217,9 @@ void PathGenerator::setResolution(int res) {
 }
 
 /**
- * @brief Render the curve using OpenGL.
+ * @brief Draw the curve using OpenGL.
+ *
+ * Uses GL_LINE_STRIP to draw the vertices stored in the VBO.
  */
 void PathGenerator::draw() {
     glBindVertexArray(vao);
@@ -249,16 +228,18 @@ void PathGenerator::draw() {
 }
 
 /**
- * @brief Recursively calculate the arc length of a cubic Bezier curve segment using adaptive subdivision.
+ * @brief Compute the arc length of a cubic Bezier segment adaptively.
  *
  * @param p0 First control point.
  * @param p1 Second control point.
  * @param p2 Third control point.
  * @param p3 Fourth control point.
- * @param t0 Start parameter (0..1) of the segment.
- * @param t1 End parameter (0..1) of the segment.
- * @param tolerance Allowed error for adaptive approximation.
- * @return float Approximated arc length between t0 and t1.
+ * @param t0 Start parameter of the segment.
+ * @param t1 End parameter of the segment.
+ * @param tolerance Tolerance for adaptive subdivision.
+ * @return float Approximated arc length of the segment between t0 and t1.
+ *
+ * Uses recursive subdivision based on chord-length vs. actual segment length.
  */
 float PathGenerator::getArcLengthAdaptive(
     const glm::vec3& p0, const glm::vec3& p1,
@@ -290,12 +271,14 @@ float PathGenerator::getArcLengthAdaptive(
 /**
  * @brief Build arc length lookup tables for all curve segments.
  *
- * Uses adaptive arc length approximation and stores normalized arc length
- * for fast parameter lookup.
+ * Computes cumulative arc length for each segment and normalizes values to [0, 1].
+ * This allows for uniform parameterization along the curve.
  */
 void PathGenerator::buildArcLengthTables() {
     arcLengthTables.clear();
-    int numSegments = NUM_POINTS / 3;
+    //int numSegments = NUM_POINTS / 3;
+    int numSegments = (NUM_POINTS - 1) / 3;
+
 
     for (int seg = 0; seg < numSegments; seg++) {
         int i0 = (seg * 3) % NUM_POINTS;
@@ -345,13 +328,13 @@ void PathGenerator::buildArcLengthTables() {
 }
 
 /**
- * @brief Convert normalized arc length (u) to curve parameter t for a segment.
+ * @brief Find the parameter t along a segment corresponding to a normalized arc length u.
  *
- * Uses binary search on the arc length lookup table.
+ * @param segmentIndex Index of the segment in the curve.
+ * @param normalizedArcLength Arc length normalized to [0, 1].
+ * @return float Parameter t in [0, 1] for the specified segment.
  *
- * @param segmentIndex Index of the segment.
- * @param normalizedArcLength Normalized arc length [0, 1].
- * @return float Parameter t corresponding to the given arc length.
+ * Uses binary search on the precomputed arc length table for fast lookup.
  */
 float PathGenerator::parameterFromArcLength(int segmentIndex, float normalizedArcLength) {
     if (segmentIndex < 0 || segmentIndex >= arcLengthTables.size()) {

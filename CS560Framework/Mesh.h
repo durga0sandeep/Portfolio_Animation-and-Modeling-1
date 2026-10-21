@@ -10,6 +10,7 @@
 #include <map>
 #include <string>
 #include "PathFollower.h"
+#include <unordered_map>
 
 
 #define MAX_NUM_BONES_PER_VERTEX 4
@@ -92,16 +93,37 @@ struct AnimationClip {
     bool loop;        // Should this animation loop?
 };
 
+
+// ---------------- IK CONSTRAINTS ----------------
+struct IKJointConstraint
+{
+    enum Type { BALL, HINGE } type = BALL;
+
+    // Joint priority: 1.0 = full influence, smaller = less influence
+    float weight = 1.0f;
+
+    // Per-CCD-iteration clamp (keeps motion natural and stable)
+    float maxStepDeg = 8.0f;
+
+    // Hinge-only (typical for elbow)
+    glm::vec3 hingeAxisLocal = glm::vec3(1, 0, 0);  // joint-local axis
+    float minHingeDeg = 0.0f;
+    float maxHingeDeg = 140.0f;
+};
+
+
 class Mesh {
 private:
     
+    //N-NEW
+    float m_animationSpeedMultiplier;  
+
+
     // Assimp
     Assimp::Importer Importer;
-    const aiScene* m_scene;
+  
     aiMatrix4x4 m_inverseTrans;
 
-    // OpenGL
-    unsigned int m_vao;
 
     // Mesh data
     std::vector<glm::vec4> m_pnt;
@@ -115,9 +137,6 @@ private:
     std::vector<BoneInfo> m_boneInfo;
     std::map<std::string, int> m_name_index;
     std::map<std::string, glm::mat4> nodeGlobalTransforms;
-
-    glm::mat4 m_currentModelTransform;
-
 
     // Store all animation tracks from the FBX
     std::vector<Animation> m_animationTracks;
@@ -136,28 +155,63 @@ private:
     float m_blendDuration;
     float m_targetAnimationTime;
 
-    float m_animationSpeedMultiplier;
-    std::map<std::string, float> m_animationYOffsets;
-
-
+    // Textures
+    // std::vector<Texture*> m_diffuse;
 
     // Scale
     float scaleFactor = 0.1f;
+
+    // ---------------- IK STATE ----------------
+    bool m_IKEnabled = false;
+    bool m_IKActive = false;
+
+    // Chain stored as names (root .. end effector)
+    std::vector<std::string> m_IKChain;
+    std::unordered_map<std::string, IKJointConstraint> m_IKConstraints;
+
+    // Target + interpolation state
+    glm::vec3 m_IKTargetWorld{ 0.0f };
+    glm::vec3 m_IKStartEffectorLocal{ 0.0f };
+    float m_IKTimer = 0.0f;
+    float m_IKDuration = 0.35f;
+
+    // Cached per-frame values (needed for world->local target conversion)
+    glm::mat4 m_ModelTr{ 1.0f };
+    glm::mat4 m_ModelTrInv{ 1.0f };
+    float m_LastDeltaTime = 0.016f;
+
+    // ---------------- IK INTERNAL HELPERS ----------------
+    void ApplyIK();
+    void SolveCCD(const glm::vec3& targetLocal);
+
+    glm::mat4 GetNodeGlobal(const std::string& name) const;
+    glm::vec3 GetNodePosition(const std::string& name) const;
+
+    void RotateChainFromJoint(
+        int jointIndex,
+        const glm::vec3& jointPos,
+        const glm::vec3& axisGlobal,
+        float angleRad
+    );
+
+
 
 public:
     // Constructor/Destructor
     Mesh();
     ~Mesh();
 
+    const aiScene* m_scene;
+    // OpenGL
+    unsigned int m_vao;
+
+
     //N-NEW
     void SetAnimationSpeed(float speedMultiplier);
     float GetAnimationSpeed() const;
 
-
-    void SetCurrentModelTransform(const glm::mat4& transform);
-
     // Loading
-    void LoadMesh(const std::string& path);
+    void LoadMesh(const std::string& path, bool AnimFlag);
     void LoadAllAnimations();
 
     // Animation clip definition
@@ -184,6 +238,17 @@ public:
     void Draw(int programId, long double dt, PathFollower& pathfollow);
     void DebugSkeleton(const glm::mat4& viewProj, GLuint shader);
 
+    // ---------------- IK PUBLIC API ----------------
+    void SetupIKChain(
+        const std::vector<std::string>& chain,
+        const std::unordered_map<std::string, IKJointConstraint>& constraints
+    );
+
+    void StartIKReachWorld(const glm::vec3& worldTarget, float durationSec);
+    void StopIK();
+    void EnableIK(bool enable);
+
+
     // Debug
     void PrintValues();
     void DataPrint();
@@ -193,8 +258,10 @@ public:
 
     const AnimationClip* GetCurrentClip() const;
 
-    void SetAnimationYOffset(const std::string& animName, float offset);
-    float GetAnimationYOffset(const std::string & animName) const;
+    glm::vec3 ProjectPointOntoPlane(const glm::vec3& p, const glm::vec3& planePoint, const glm::vec3& planeNormal);
+
+    void SetIKTargetWorld(const glm::vec3& worldTarget);
+
 
 private:
     // Initialization

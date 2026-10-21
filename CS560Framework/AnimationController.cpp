@@ -6,10 +6,14 @@
 AnimationController::AnimationController(Mesh& mesh, PathFollower& follower,
     float walkSpeed, float runSpeed, float blendTime)
     : characterMesh(mesh), pathFollower(follower),
-    currentPhase(EASE_IN), previousPhase(EASE_IN),
+    currentPhase(CONSTANT), previousPhase(CONSTANT),
     blendDuration(blendTime), debugOutput(true),
-    walkAnimSpeed(walkSpeed), runAnimSpeed(runSpeed)
+	walkAnimSpeed(walkSpeed), runAnimSpeed(runSpeed), shaderProgram(0), isMoving(false)
 {
+
+    characterMesh.BlendToAnimation("idle", 0.0f);
+    characterMesh.SetAnimationSpeed(1.0f);
+
 }
 
 AnimationController::SpeedPhase AnimationController::determineCurrentPhase() {
@@ -29,32 +33,13 @@ AnimationController::SpeedPhase AnimationController::determineCurrentPhase() {
 }
 
 void AnimationController::handlePhaseTransition() {
-    switch (currentPhase) {
-    case EASE_IN:
-        if (debugOutput) {
-            std::cout << "Phase: EASE_IN (Accelerating) - Blending to WALK" << std::endl;
-        }
-        characterMesh.BlendToAnimation("walk", blendDuration);
-        break;
 
-    case CONSTANT:
-        if (debugOutput) {
-            std::cout << "Phase: CONSTANT (Max Speed) - Blending to RUN" << std::endl;
-        }
-        characterMesh.BlendToAnimation("run", blendDuration);
-        break;
-
-    case EASE_OUT:
-        if (debugOutput) {
-            std::cout << "Phase: EASE_OUT (Decelerating) - Blending to WALK" << std::endl;
-        }
-        characterMesh.BlendToAnimation("walk", blendDuration);
-        break;
-    }
+    characterMesh.SetAnimationSpeed(1.0f);
 }
 
 void AnimationController::updateAnimationSpeed(float currentSpeed) {
     
+    /*
     float animSpeedMultiplier;
 	float referenceSpeed = (currentPhase == CONSTANT) ? runAnimSpeed : walkAnimSpeed;
 
@@ -66,30 +51,18 @@ void AnimationController::updateAnimationSpeed(float currentSpeed) {
     }
 
     animSpeedMultiplier = glm::clamp(animSpeedMultiplier, 0.01f, 5.0f);
+    characterMesh.SetAnimationSpeed(animSpeedMultiplier);
+    */
 
-    
-    //const AnimationClip* currentClip = characterMesh.GetCurrentClip();
-    //if (!currentClip) return;
+    const float desiredRunWorldSpeed = runAnimSpeed;  // use your variable or a constant you tuned
 
-    //float animDuration = characterMesh.GetAnimationDuration(
-    //    currentPhase == CONSTANT ? "run" : "walk"
-    //);
+    float m = currentSpeed / desiredRunWorldSpeed;
 
-    //if (currentPhase == CONSTANT) {
-    //    // During constant speed phase (running)
-    //    animSpeedMultiplier = currentSpeed / runAnimSpeed;
-    //}
-    //else {
-    //    // During ease-in or ease-out (walking)
-    //    animSpeedMultiplier = currentSpeed / walkAnimSpeed;
-    //}
+    m = glm::clamp(m, 0.85f, 1.25f);
 
-    //// Clamp to reasonable values to avoid extreme speeds
-    //animSpeedMultiplier = glm::clamp(animSpeedMultiplier, 0.1f, 3.0f);
-    //
+    characterMesh.SetAnimationSpeed(m);
 
-    //characterMesh.SetAnimationSpeed(animSpeedMultiplier);
-
+    /*
     if (debugOutput) {
         static int frameCount = 0;
         if (frameCount % 60 == 0) {  // Print every 60 frames
@@ -98,27 +71,67 @@ void AnimationController::updateAnimationSpeed(float currentSpeed) {
         }
         frameCount++;
     }
+    */
+
 }
 
 
 void AnimationController::update(float deltaTime) {
-    // Get current path state
     PathFollower::PathState state = pathFollower.update(deltaTime);
 
-    // Determine current phase
-    currentPhase = determineCurrentPhase();
+    const float t = pathFollower.getCurrentTime();
+    const float T = pathFollower.getTotalDuration();
+    //const bool finished = (t >= T - 1e-5f) || (state.normalizedArcLength >= 0.9999f);
+    const bool finished = (t >= T - deltaTime) || (state.normalizedArcLength >= 0.9999f);
+    
+    
+    if (finished)
+    {
+        if (isMoving)
+        {
+            characterMesh.BlendToAnimation("idle", 0.05f); // or 0.0f if you want an instant cut
+            characterMesh.SetAnimationSpeed(1.0f);
+            isMoving = false;
 
-    // Handle phase transitions with smooth blending
-    if (currentPhase != previousPhase) {
-        handlePhaseTransition();
-        previousPhase = currentPhase;
+            if (debugOutput) std::cout << "IDLE (forced at path end)\n";
+        }
+
+        characterMesh.Draw(shaderProgram, deltaTime, pathFollower);
+        return;
     }
 
-    // Update animation playback speed to match movement speed
-    updateAnimationSpeed(state.speed);
+    const float RUN_ENTER = 0.04f;
+    const float RUN_EXIT = 0.07f;
 
-    // Draw the character with speed-adjusted animation
+    //std::cout << "DEBUGGING THE SPEED  " << state.speed << " +++ " << std::endl;
+
+    if (!isMoving)
+    {
+        // Enter run only if clearly moving
+        if (state.speed > RUN_ENTER)
+        {
+            characterMesh.BlendToAnimation("run", blendDuration);
+            isMoving = true;
+        }
+    }
+    else
+    {
+        // Exit run only if clearly slow
+        if (state.speed < RUN_EXIT)
+        {
+            characterMesh.BlendToAnimation("idle", blendDuration);
+            characterMesh.SetAnimationSpeed(1.0f);
+            isMoving = false;
+        }
+        else
+        {
+            // STEP 3 — animation speed while running
+            updateAnimationSpeed(state.speed);
+        }
+    }
+
     characterMesh.Draw(shaderProgram, deltaTime, pathFollower);
+
 
 }
 

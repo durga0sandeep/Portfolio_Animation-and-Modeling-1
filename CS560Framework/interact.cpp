@@ -44,6 +44,31 @@ void Keyboard(GLFWwindow* window, int key, int scancode, int action, int mods)
     if (key == GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL)
         control = !control;
 
+
+    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+        switch (key) {
+        case GLFW_KEY_LEFT:
+            scene.moveLeft = true;
+            break;
+        case GLFW_KEY_RIGHT:
+            scene.moveRight = true;
+            break;
+        case GLFW_KEY_UP:
+            scene.moveUp = true;
+            break;
+        case GLFW_KEY_DOWN:
+            scene.moveDown = true;
+            break;
+        case GLFW_KEY_PAGE_UP:
+            scene.moveForward = true;
+            break;
+        case GLFW_KEY_PAGE_DOWN:
+            scene.moveBackward = true;
+            break;
+        }
+    }
+
+
     if (action == GLFW_PRESS) {
         switch (key) {
         
@@ -58,12 +83,35 @@ void Keyboard(GLFWwindow* window, int key, int scancode, int action, int mods)
             break;
         case GLFW_KEY_ESCAPE: case GLFW_KEY_Q: 
             exit(0);
+
+
         }
     }
 
     else if (action == GLFW_RELEASE) {
+        switch (key) {
+        case GLFW_KEY_LEFT:
+            scene.moveLeft = false;
+            break;
+        case GLFW_KEY_RIGHT:
+            scene.moveRight = false;
+            break;
+        case GLFW_KEY_UP:
+            scene.moveUp = false;
+            break;
+        case GLFW_KEY_DOWN:
+            scene.moveDown = false;
+            break;
+        case GLFW_KEY_PAGE_UP:
+            scene.moveForward = false;
+            break;
+        case GLFW_KEY_PAGE_DOWN:
+            scene.moveBackward = false;
+            break;
+        default:
+            scene.key = 0;
+        }
 
-        scene.key = 0;
         fflush(stdout);
     }
 }
