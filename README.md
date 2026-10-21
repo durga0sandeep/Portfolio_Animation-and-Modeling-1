@@ -18,6 +18,7 @@ Project 4: Physically-Based Modeling
 Developed physically based simulation techniques using Newtonian mechanics and rigid-body dynamics. Explored mass and inertia, forces and torques, linear and angular momentum, collision detection, contact response, friction, and numerical integration to simulate realistic physical interactions.
 
 
+
 <img width="779" height="593" alt="AM1" src="https://github.com/user-attachments/assets/37b70933-830d-466e-ab65-6fc41fb92ace" />
 
 
