@@ -30,6 +30,8 @@ namespace glbinding
 *  }
 *  @endcode
 */
+
+
 class GLBINDING_TEMPLATE_API Version
 {
 public:

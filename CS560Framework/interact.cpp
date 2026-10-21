@@ -33,7 +33,7 @@ void Keyboard(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     if (ImGui::GetIO().WantCaptureKeyboard) return;
 
-    if (action == GLFW_REPEAT) return; // Because keyboard autorepeat is evil.
+    //if (action == GLFW_REPEAT) return; // Because keyboard autorepeat is evil.
 
     printf("Keyboard %c(%d);  S%d %s M%d\n", key, key, scancode, ACTION[action].c_str(), mods);
     fflush(stdout);
@@ -44,9 +44,34 @@ void Keyboard(GLFWwindow* window, int key, int scancode, int action, int mods)
     if (key == GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL)
         control = !control;
 
+
+    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+        switch (key) {
+        case GLFW_KEY_LEFT:
+            scene.moveLeft = true;
+            break;
+        case GLFW_KEY_RIGHT:
+            scene.moveRight = true;
+            break;
+        case GLFW_KEY_UP:
+            scene.moveUp = true;
+            break;
+        case GLFW_KEY_DOWN:
+            scene.moveDown = true;
+            break;
+        case GLFW_KEY_PAGE_UP:
+            scene.moveForward = true;
+            break;
+        case GLFW_KEY_PAGE_DOWN:
+            scene.moveBackward = true;
+            break;
+        }
+    }
+
+
     if (action == GLFW_PRESS) {
         switch (key) {
-        
+
         case GLFW_KEY_KP_0: case GLFW_KEY_KP_2: case GLFW_KEY_KP_4: case GLFW_KEY_B:
             scene.key = key;
             break;
@@ -62,8 +87,30 @@ void Keyboard(GLFWwindow* window, int key, int scancode, int action, int mods)
     }
 
     else if (action == GLFW_RELEASE) {
+            
+        switch (key) {
+        case GLFW_KEY_LEFT:
+            scene.moveLeft = false;
+            break;
+        case GLFW_KEY_RIGHT:
+            scene.moveRight = false;
+            break;
+        case GLFW_KEY_UP:
+            scene.moveUp = false;
+            break;
+        case GLFW_KEY_DOWN:
+            scene.moveDown = false;
+            break;
+        case GLFW_KEY_PAGE_UP:
+            scene.moveForward = false;
+            break;
+        case GLFW_KEY_PAGE_DOWN:
+            scene.moveBackward = false;
+            break;
+        default:
+            scene.key = 0;
+        }
 
-        scene.key = 0;
         fflush(stdout);
     }
 }
@@ -156,7 +203,7 @@ void Scroll(GLFWwindow* window, double x, double y)
         scene.tr[2] *= a;
         printf("ry: %f\n", scene.ry);
     }
-
+        
     else if (y > 0.0) {
         scene.tr[2] = pow(scene.tr[2], 1.0f / 1.02f);
     }
@@ -173,3 +220,5 @@ void InitInteraction()
     glfwSetCursorPosCallback(scene.window, MouseMotion);
     glfwSetScrollCallback(scene.window, Scroll);
 }
+
+

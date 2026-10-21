@@ -25,6 +25,8 @@ class Texture
 
     void BindTexture(const int unit, const int programId, const std::string& name);
     void UnbindTexture(const int unit);
+
+    void ActivateTexture(const int unit);
 };
 
 

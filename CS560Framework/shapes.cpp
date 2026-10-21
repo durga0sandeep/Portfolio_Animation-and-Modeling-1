@@ -86,6 +86,8 @@ unsigned int VaoFromTris(std::vector<glm::vec4> Pnt,
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
+	printf("THE TEX SIZE %d\n", Tex.size());
+
 	if (Tex.size() > 0) {
 		GLuint Tbuff;
 		glGenBuffers(1, &Tbuff);
@@ -96,7 +98,7 @@ unsigned int VaoFromTris(std::vector<glm::vec4> Pnt,
 		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
-
+	
 	if (Tan.size() > 0) {
 		GLuint Dbuff;
 		glGenBuffers(1, &Dbuff);
@@ -181,4 +183,38 @@ Quad::Quad(const int n)
 
 	vaoID = VaoFromTris(Pnt, Nrm, Tex, Tan, Tri);
 	count = int(Tri.size());
+}
+
+
+Line::Line(const int n){
+	
+	diffuseColor = glm::vec3(0.3, 0.2, 0.1);
+	specularColor = glm::vec3(1.0, 1.0, 1.0);
+	shininess = 120.0;
+
+}
+
+
+void Line::SetupLineVAO(GLuint& VAO, GLuint& VBO)
+{
+	glGenVertexArrays(1, &VAO);
+	glGenBuffers(1, &VBO);
+
+	glBindVertexArray(VAO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	glBindVertexArray(0);
+}
+
+void Line::DrawLine(const glm::vec3& start, const glm::vec3& end,
+	GLuint shader, GLuint VAO, GLuint VBO)
+{
+	glm::vec3 lineVertices[2] = { start, end };
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(lineVertices), lineVertices, GL_DYNAMIC_DRAW);
+
+	glUseProgram(shader);
+	glBindVertexArray(VAO);
+	glDrawArrays(GL_LINES, 0, 2);
 }

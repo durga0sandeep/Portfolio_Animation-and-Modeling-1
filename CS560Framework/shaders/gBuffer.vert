@@ -16,10 +16,18 @@ out vec3 normalVec;
 out vec2 texCoord;
 out vec4 worldPos;
 
+
 void main()
 {
-    gl_Position = WorldProj*WorldView*ModelTr*vertex;
+   
+    gl_Position = WorldProj * WorldView * ModelTr * vertex;
     worldPos = ModelTr*vertex;
     normalVec = vertexNormal*mat3(NormalTr); 
     texCoord = vertexTexture; 
+
+
 }
+
+
+
+
