@@ -134,6 +134,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AnimationController.cpp" />
     <ClCompile Include="emulator.cpp" />
     <ClCompile Include="fbo.cpp" />
     <ClCompile Include="framework.cpp" />
@@ -147,6 +148,8 @@
     <ClCompile Include="include\imgui-1.91.1\imgui_widgets.cpp" />
     <ClCompile Include="interact.cpp" />
     <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="PathFollower.cpp" />
+    <ClCompile Include="PathGenerator.cpp" />
     <ClCompile Include="scene.cpp" />
     <ClCompile Include="shader.cpp" />
     <ClCompile Include="shapes.cpp" />
@@ -154,12 +157,15 @@
     <ClCompile Include="transform.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AnimationController.h" />
     <ClInclude Include="emulator.h" />
     <ClInclude Include="fbo.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="gbuffer.h" />
     <ClInclude Include="interact.h" />
     <ClInclude Include="Mesh.h" />
+    <ClInclude Include="PathFollower.h" />
+    <ClInclude Include="PathGenerator.h" />
     <ClInclude Include="scene.h" />
     <ClInclude Include="shader.h" />
     <ClInclude Include="shapes.h" />

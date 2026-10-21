@@ -17,6 +17,10 @@
 #include "fbo.h"
 #include "gbuffer.h"
 #include "Mesh.h"
+#include "PathGenerator.h"
+#include "PathFollower.h"
+#include "AnimationController.h"
+
 
 class Shader;
 
@@ -62,6 +66,7 @@ public:
     Shape* quad; //deferred shading
     Texture* CharTexture;
 
+    AnimationController* animController;
 
     //UI
     bool play = true;
@@ -74,14 +79,21 @@ public:
     ShaderProgram* basicShader;
 
     ShaderProgram* BoneProgram;
-
-	//ShaderProgram* CurveProgram;
+	ShaderProgram* CurveProgram;
 
     void InitCamera();
     void InitializeScene();
     void BuildTransforms();
     void DrawMenu();
     void DrawScene();
+
+private:
+
+    PathGenerator* bezierCurve;
+	PathFollower* follower;
+
+    bool showCurve = true;
+
 
 };
 

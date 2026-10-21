@@ -41,12 +41,19 @@ int main(int argc, char** argv)
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
+
+    //auto v = glbinding::Version::current();
+    //auto v = glbinding::Version::majorVersion(), glbinding::Version::minorVersion(), glbinding::Version::patchVersion();
+    //printf("glbinding version: %d.%d.%d\n", v.major(), v.minor(), v.patch());
+
+
     //
     // Initialize interaction and the scene to be drawn.
     InitInteraction();//For interactions - input system
     scene.InitializeScene();//
 
     ImGui::CreateContext();
+    //ImGuiIO& io = ImGui::GetIO(); (void)io; 
 
     ImGui_ImplGlfw_InitForOpenGL(scene.window, true);
     ImGui_ImplOpenGL3_Init();
@@ -60,7 +67,13 @@ int main(int argc, char** argv)
         glfwPollEvents();
         
         scene.DrawScene();
+        //scene.DebugDraw();//Debug Skeleton..not sure of the order
         scene.DrawMenu();
+        
+        //DrawSkeleton(const aiNode * node, const glm::mat4 & parentTransform, 
+        // const glm::mat4 & globalInverseTransform, GLuint shader, 
+        // GLuint lineVAO, GLuint lineVBO)
+
         
         glfwSwapBuffers(scene.window);
     }
@@ -70,20 +83,8 @@ int main(int argc, char** argv)
     ImGui::DestroyContext();
 
     glfwTerminate();
+
     
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

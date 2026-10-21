@@ -1,3 +1,16 @@
+/**
+ * @file scene.cpp
+ * @brief Main scene implementation handling rendering, animation, UI, and camera logic.
+ *
+ * This file initializes and renders a deferred shading scene with:
+ *  - Skinned animated character
+ *  - Path-following using Bezier curves
+ *  - Animation blending via AnimationController
+ *  - Bone debugging
+ *  - ImGui-based UI controls
+ *
+ */
+
 #include "math.h"
 #include <iostream>
 #include <stdlib.h>
@@ -19,6 +32,8 @@ using namespace gl;
 #include "framework.h"
 #include "texture.h"
 #include "transform.h"
+#include "AnimationController.h"
+
 
 
 const float PI = 3.14159f;
@@ -28,7 +43,12 @@ glm::mat4 Identity;
 
 #define CHECKERROR {GLenum err = glGetError(); if (err != GL_NO_ERROR) { fprintf(stderr, "OpenGL error (at line scene.cpp:%d): %s\n", __LINE__, gluErrorString(err)); exit(-1);} }
 
-
+/**
+ * @brief Initializes camera parameters
+ *
+ * Sets default position, orientation, movement speed,
+ * clipping planes, and projection parameters.
+ */
 void Scene::InitCamera()
 {
     spin = 0.0;
@@ -43,6 +63,18 @@ void Scene::InitCamera()
     back = 5000.0;
 }
 
+/**
+ * @brief Initializes all scene resources
+ *
+ * This includes:
+ *  - OpenGL states
+ *  - G-buffer setup (deferred shading)
+ *  - Shader programs
+ *  - Model and animation clips
+ *  - Bezier curve path
+ *  - Path follower
+ *  - Animation controller
+ */
 void Scene::InitializeScene()
 {
     std::cout << "INIT\n";
@@ -76,8 +108,14 @@ void Scene::InitializeScene()
     BoneProgram->AddShader("shaders/bone.frag", GL_FRAGMENT_SHADER);
     glBindAttribLocation(BoneProgram->programId, 0, "aPos");
     BoneProgram->LinkProgram();
-   
- 
+    
+	CurveProgram = new ShaderProgram();
+	CurveProgram->AddShader("shaders/curve.vert", GL_VERTEX_SHADER);
+	CurveProgram->AddShader("shaders/curve.frag", GL_FRAGMENT_SHADER);
+	glBindAttribLocation(CurveProgram->programId, 0, "aPos");
+	CurveProgram->LinkProgram();
+
+
     CharTexture = new Texture("fbx/textures/roman_blue_D_texture.jpg");
 
     lightingProgram = new ShaderProgram();
@@ -92,7 +130,7 @@ void Scene::InitializeScene()
     lightingProgram->UseShader();
     CharTexture->BindTexture(0, lightingProgram->programId, "texture1");//
     
-   
+
     gBufferProgram = new ShaderProgram();
     gBufferProgram->AddShader("shaders/gBuffer.vert", GL_VERTEX_SHADER);
     gBufferProgram->AddShader("shaders/gBuffer.frag", GL_FRAGMENT_SHADER);
@@ -109,19 +147,80 @@ void Scene::InitializeScene()
 
     model = new Mesh();
     model->LoadMesh(meshPat);
-    
+
+
+    /*
+    * 
+    Idle - 0 to 338
+    Run - 338 to 362
+    Death - 362 to 442
+    Attack - 442 to 510
+    T-Pose - 510 to 540
+    540
+    */
+
     model->DefineAnimationClip("idle", 0, 0, 338, true);
+	model->SetAnimationYOffset("idle", 0.0f);
     model->DefineAnimationClip("run", 0, 339, 361, true);
-    model->DefineAnimationClip("fall down", 0, 362, 442, true);
+	model->SetAnimationYOffset("run", 0.0f);
+    model->DefineAnimationClip("death", 0, 362, 442, true);
+	model->SetAnimationYOffset("death", 0.0f);
     model->DefineAnimationClip("attack", 0, 442, 510, true);
+	model->SetAnimationYOffset("attack", 0.0f);
     model->DefineAnimationClip("tpose", 0, 510, 540, true);
-
-
-    model->SetAnimation("idle");
-    model->SetAnimationYOffset("idle", 0.0f);
+	model->SetAnimationYOffset("tpose", 0.0f);
     
-    start = glfwGetTime();
+	model->AddFullTrackAsClip(1,"walk", true);
+	model->SetAnimationYOffset("walk", 3.0f);
+
+	model->SetAnimation("run");
+	model->SetAnimationYOffset("run", 0.0f);
+
+    //
+    // Initialize Bezier Curve
+    bezierCurve = new PathGenerator(100);
+    //
+	//Path Follower Initialization
+	follower = new PathFollower(bezierCurve, 15.0f); // Speed = 5 units/sec
+
+    // RECOMMENDED: Use look-ahead with banking for smooth path following
+    follower->setOrientationMode(PathFollower::LOOK_AHEAD_WITH_BANKING);
+    follower->setLookAheadDistance(5.0f);  // Look 5% ahead on the path
+    follower->setBankingFactor(0.4f);      // Moderate banking into turns
+    follower->setLooping(true);
+    follower->start();
+
+	float PathMaxSpeed = follower->getMaxSpeed();
+
+//    float walkspeed = PathMaxSpeed * 0.8f;//0.35f;
+//    float runspeed = PathMaxSpeed;
+
+    /*
+    //
+    //Current Speed
+    float walkspeed = PathMaxSpeed / 0.5f;//0.35f;
+    float runspeed = PathMaxSpeed / 0.5f;
+    */
+    //New changes
+    float walkspeed = 2.0f;//0.35f;
+    float runspeed = 5.0f;
+
+
+/*
+    float walkspeed = 4.0f;
+    float runspeed = 10.0f;
+*/
+
+    animController = new AnimationController(*model, *follower, walkspeed, runspeed, 0.5f);
+    animController->SetMeshPrgId(gBufferProgram->programId);
+    animController->setDebugOutput(true);
+
+
+    //start = glfwGetTime();
+
 }
+
+
 
 
 void Scene::DrawMenu()
@@ -132,41 +231,85 @@ void Scene::DrawMenu()
 
     ImGui::Begin("Sample UI Box");
     ImGui::Text("sample text");
-   
+
     ImGui::Checkbox("Draw Bone", &bone);
     ImGui::SameLine();
     ImGui::Checkbox("Draw Mesh", &mesh);
-    
-    const char* animLabels[] = { "Idle", "Run", "Fall Down", "Attack", "TPose" };
-    const char* animClipNames[] = { "idle", "run", "fall down", "attack", "tpose" };
-
-    static int currentAnimIdx = 0; // persists across frames
-    if (ImGui::BeginCombo("Animation", animLabels[currentAnimIdx]))
-    {
-        for (int n = 0; n < IM_ARRAYSIZE(animLabels); n++)
-        {
-            bool is_selected = (currentAnimIdx == n);
-            if (ImGui::Selectable(animLabels[n], is_selected))
-            {
-                currentAnimIdx = n;
-                if (model) model->SetAnimation(animClipNames[currentAnimIdx]);
-            }
-            if (is_selected)
-                ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
 
     ImGui::Separator();
+
+    // Bezier Curve Controls
+    ImGui::Text("Bezier Curve Controls");
+    ImGui::Checkbox("Show Curve", &showCurve);
+
+    if (showCurve && bezierCurve) {
+        if (ImGui::CollapsingHeader("Control Points")) {
+            //ImGui::Begin("Path Editor");
+
+            if (ImGui::Button("Reset Path Curve")) {
+                float radius = 15.0f;
+                float k = 0.552284f; // Handle length for circle
+
+                // Setup 9 points for 3 segments in a circle
+                for (int i = 0; i < 3; i++) {
+                    float angle = (i * 2.0f * 3.14159f) / 3.0f;
+                    float nextAngle = ((i + 1) * 2.0f * 3.14159f) / 3.0f;
+
+                    
+                    // The Node
+                    bezierCurve->controlPoints[i * 3] = glm::vec3(cos(angle) * radius, sin(angle) * radius, 0);
+
+                    // The outgoing handle (Right)
+                    glm::vec3 tangent = glm::vec3(-sin(angle), cos(angle), 0);
+                    bezierCurve->controlPoints[i * 3 + 1] = bezierCurve->controlPoints[i * 3] + tangent * (radius * 0.8f);
+
+                    // The incoming handle (Left)
+                    glm::vec3 nextNode = glm::vec3(cos(nextAngle) * radius, sin(nextAngle) * radius, 0);
+                    glm::vec3 nextTangent = glm::vec3(-sin(nextAngle), cos(nextAngle), 0);
+                    bezierCurve->controlPoints[i * 3 + 2] = nextNode - nextTangent * (radius * 0.8f);
+                }
+                bezierCurve->updateCurveVertices();
+            }
+
+
+            for (int i = 0; i < bezierCurve->getNumPoints(); i++)
+            {
+                ImGui::PushID(i);  // unique stack ID
+
+                glm::vec3 p = bezierCurve->getControlPoint(i);
+                float pos[3] = { p.x, p.y, p.z };
+
+                const char* visibleLabel = (i % 3 == 0) ? "Node" : "Handle";
+
+                // Hidden unique ID: visibleLabel##i
+                std::string internalLabel = std::string(visibleLabel) + "##" + std::to_string(i);
+
+                if (ImGui::DragFloat3(internalLabel.c_str(), pos, 0.1f))
+                {
+                    bezierCurve->setControlPoint(i, glm::vec3(pos[0], pos[1], pos[2]));
+                }
+
+                ImGui::PopID();
+            }
+
+
+        }
+    }
+
     ImGui::End();
-    
+
+
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
 }
 
-
-
-
+/**
+ * @brief Builds camera transformations
+ *
+ * Handles keyboard input for camera translation,
+ * rotation, zoom, and projection matrix creation.
+ */
 void Scene::BuildTransforms()
 {
     float now = (float)glfwGetTime();
@@ -196,30 +339,25 @@ void Scene::BuildTransforms()
 
 }
 
-
-
+/**
+ * @brief Renders the entire scene
+ *
+ * Rendering pipeline:
+ *  1. G-buffer pass (geometry)
+ *  2. Lighting pass (fullscreen quad)
+ *  3. Bone debug overlay
+ *  4. Bezier curve visualization
+ */
 void Scene::DrawScene()
 {
     glfwGetFramebufferSize(window, &width, &height);
     glViewport(0, 0, width, height);
 
     BuildTransforms();
-
     WorldInverse = glm::inverse(WorldView);
-    
+
     int loc, programId;
 
-    //Draw the bones
-    /*
-    BoneProgram->UseShader();
-    programId = BoneProgram->programId;
-    loc = glGetUniformLocation(programId, "viewProj");
-    ResultMat = WorldProj * WorldView;
-    glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(ResultMat));
-    */
-
-    //
-    //charTexture->BindTexture(1, basicShader->programId, "texture1");
     CharTexture->ActivateTexture(0);//Activating Texture
 
 
@@ -236,7 +374,7 @@ void Scene::DrawScene()
     glDrawBuffers(4, DrawBuffers);
 
     glViewport(0, 0, width, height);
-    glClearColor(0.8f,0.8f,0.8f, 1.f);
+    glClearColor(0.8f, 0.8f, 0.8f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     loc = glGetUniformLocation(programId, "WorldProj");
@@ -244,13 +382,18 @@ void Scene::DrawScene()
     loc = glGetUniformLocation(programId, "WorldView");
     glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(WorldView));
 
-    long double curr = glfwGetTime();
-    long double dt = ((float)(curr - start));
-    start = curr;
 
+    static long double lastFrame = glfwGetTime();
+    long double currentFrame = glfwGetTime();
+    long double deltaTime = currentFrame - lastFrame;
+    lastFrame = currentFrame;
 
-    //std::cout << " +++ " << programId << std::endl;
-    model->Draw(programId, dt);
+    // Cap delta time to prevent huge jumps
+    if (deltaTime > 0.1) {
+        deltaTime = 0.1;
+    }
+
+    animController->update((float)deltaTime);
     
 
     gBuffer.UnbindFBO();
@@ -265,13 +408,7 @@ void Scene::DrawScene()
     lightingProgram->UseShader();
     programId = lightingProgram->programId;
     
-    //charTexture->BindTexture(0, programId, "texCoord");
-    
-    /*
-    loc = glGetUniformLocation(programId, "texCoord");
-    glUniform1i(loc, CharTexture);
-    */
-    
+
     loc = glGetUniformLocation(programId, "WorldProj");
     glUniformMatrix4fv(loc, 1, GL_FALSE, Pntr(WorldProj));
     loc = glGetUniformLocation(programId, "WorldView");
@@ -322,7 +459,7 @@ void Scene::DrawScene()
         BoneProgram->UnuseShader();
     }
 
-    /*
+
     // Draw Bezier Curve
     if (showCurve && bezierCurve)
     {
@@ -339,7 +476,7 @@ void Scene::DrawScene()
 
         CurveProgram->UnuseShader();
     }
-    */
+
 
     // Handle wireframe mode
     if (mesh == false) {
