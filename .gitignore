@@ -1,0 +1,76 @@
+# ==============================
+# Visual Studio
+# ==============================
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ==============================
+# Build output
+# ==============================
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+out/
+build/
+
+# Compiled binaries and libraries
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+*.pch
+*.idb
+*.ipch
+*.tlog
+*.lastbuildstate
+*.VC.db
+*.VC.VC.opendb
+
+# ==============================
+# Visual Studio generated files
+# ==============================
+Generated Files/
+ipch/
+*.cache
+*.VC.db-shm
+*.VC.db-wal
+
+# ==============================
+# CMake (if used)
+# ==============================
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+CMakeUserPresets.json
+
+# ==============================
+# Package managers
+# ==============================
+vcpkg_installed/
+packages/
+
+# ==============================
+# OS files
+# ==============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Logs and temporary files
+# ==============================
+*.log
+*.tmp
+*.bak
+*.swp
